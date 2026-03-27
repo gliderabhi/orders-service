@@ -11,7 +11,14 @@ java {
     sourceCompatibility = JavaVersion.VERSION_17
 }
 
+configurations {
+    compileOnly {
+        extendsFrom(configurations.annotationProcessor.get())
+    }
+}
+
 repositories {
+    mavenLocal()
     mavenCentral()
 }
 
@@ -19,9 +26,12 @@ extra["springCloudVersion"] = "2023.0.1"
 
 dependencies {
     implementation("org.springframework.boot:spring-boot-starter-web")
+    implementation("com.sevis:sevis-common:1.0.0")
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
     implementation("org.springframework.cloud:spring-cloud-starter-netflix-eureka-client")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
+    compileOnly("org.projectlombok:lombok:1.18.38")
+    annotationProcessor("org.projectlombok:lombok:1.18.38")
     runtimeOnly("com.mysql:mysql-connector-j")
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
