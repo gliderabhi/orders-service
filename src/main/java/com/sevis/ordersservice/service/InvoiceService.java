@@ -186,6 +186,26 @@ public class InvoiceService {
         return new InvoiceDetailResponse(inv);
     }
 
+    // ── Generate PDF ──────────────────────────────────────────────────────────
+
+    @Transactional(readOnly = true)
+    public byte[] generatePdf(Long id) {
+        Invoice inv = invoiceRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Invoice not found"));
+        inv.getLineItems().size();
+        if (inv.getCustomer() != null) inv.getCustomer().getName();
+        if (inv.getJobCard() != null) {
+            inv.getJobCard().getJobCardNumber();
+            if (inv.getJobCard().getVehicle() != null) inv.getJobCard().getVehicle().getRegNumber();
+        }
+        try {
+            return InvoicePdfGenerator.generate(inv);
+        } catch (Exception e) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Failed to generate PDF: " + e.getMessage());
+        }
+    }
+
     // ── Private helpers ───────────────────────────────────────────────────────
 
     private JobCard createJobCardFromInvoice(
