@@ -35,17 +35,23 @@ public class JobCardService {
 
     public List<JobCardSummaryResponse> getAll(Long dealerId) {
         List<JobCard> cards = (dealerId != null)
-                ? jobCardRepository.findByDealerIdOrderByCreatedAtDesc(dealerId)
-                : jobCardRepository.findAllByOrderByCreatedAtDesc();
+                ? jobCardRepository.findByDealerIdWithSummary(dealerId)
+                : jobCardRepository.findAllWithSummary();
         return cards.stream().map(JobCardSummaryResponse::new).collect(Collectors.toList());
     }
 
     // ── Detail ────────────────────────────────────────────────────────────────
 
+    @Transactional(readOnly = true)
     public JobCardDetailResponse getById(Long id) {
-        JobCard jc = jobCardRepository.findByIdWithDetails(id)
+        JobCard jc = jobCardRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Job card not found"));
-        // Fetch lazy associations before transaction closes
+        // Force-init each lazy collection separately — avoids MultipleBagFetchException
+        jc.getCustomer().getName();
+        jc.getVehicle().getRegNumber();
+        jc.getLabourItems().size();
+        jc.getParts().size();
+        jc.getAncillaryItems().size();
         jc.getChecks();
         jc.getBilling();
         return new JobCardDetailResponse(jc);
