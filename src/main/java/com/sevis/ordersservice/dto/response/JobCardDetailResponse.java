@@ -1,6 +1,7 @@
 package com.sevis.ordersservice.dto.response;
 
 import com.sevis.ordersservice.model.*;
+import com.sevis.ordersservice.model.Invoice;
 import lombok.Getter;
 
 import java.util.List;
@@ -28,6 +29,7 @@ public class JobCardDetailResponse {
     private final List<AncillaryItemInfo> ancillaryItems;
     private final ChecksInfo checks;
     private final BillingInfo billing;
+    private final InvoiceInfo invoice;
 
     public JobCardDetailResponse(JobCard jc) {
         this.id                 = jc.getId();
@@ -51,6 +53,13 @@ public class JobCardDetailResponse {
 
         this.checks  = jc.getChecks()  != null ? new ChecksInfo(jc.getChecks())   : null;
         this.billing = jc.getBilling() != null ? new BillingInfo(jc.getBilling())  : null;
+
+        // Latest invoice if present
+        InvoiceInfo inv = null;
+        if (jc.getInvoices() != null && !jc.getInvoices().isEmpty()) {
+            inv = new InvoiceInfo(jc.getInvoices().get(jc.getInvoices().size() - 1));
+        }
+        this.invoice = inv;
     }
 
     // ── Nested info classes ───────────────────────────────────────────────────
@@ -221,6 +230,35 @@ public class JobCardDetailResponse {
             this.advanceAmount   = b.getAdvanceAmount();
             this.balanceDue      = b.getBalanceDue();
             this.paymentType     = b.getPaymentType();
+        }
+    }
+
+    @Getter
+    public static class InvoiceInfo {
+        private final Long id;
+        private final String invoiceNumber;
+        private final String invoiceDate;
+        private final String originalJobCardNumber;
+        private final String dealerGstin;
+        private final String dealerName;
+        private final String serviceType;
+        private final String paymentMethod;
+        private final Double grandTotal;
+        private final Double totalTaxAmount;
+        private final int lineItemCount;
+
+        public InvoiceInfo(Invoice inv) {
+            this.id                    = inv.getId();
+            this.invoiceNumber         = inv.getInvoiceNumber();
+            this.invoiceDate           = inv.getInvoiceDate() != null ? inv.getInvoiceDate().toString() : null;
+            this.originalJobCardNumber = inv.getOriginalJobCardNumber();
+            this.dealerGstin           = inv.getDealerGstin();
+            this.dealerName            = inv.getDealerName();
+            this.serviceType           = inv.getServiceType();
+            this.paymentMethod         = inv.getPaymentMethod();
+            this.grandTotal            = inv.getGrandTotal();
+            this.totalTaxAmount        = inv.getTotalTaxAmount();
+            this.lineItemCount         = inv.getLineItems() != null ? inv.getLineItems().size() : 0;
         }
     }
 }

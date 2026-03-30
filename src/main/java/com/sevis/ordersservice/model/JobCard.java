@@ -25,11 +25,11 @@ public class JobCard {
     private Long dealerId;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "customer_id", nullable = false)
+    @JoinColumn(name = "customer_id")
     private Customer customer;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "vehicle_id", nullable = false)
+    @JoinColumn(name = "vehicle_id")
     private Vehicle vehicle;
 
     @Column(nullable = false)
@@ -66,6 +66,12 @@ public class JobCard {
 
     @OneToOne(mappedBy = "jobCard", cascade = CascadeType.ALL, orphanRemoval = true)
     private JobCardBilling billing;
+
+    // Original job card number from external DMS/PDF (e.g. JC-JhaDam-GP1-2526-000212)
+    private String externalJobCardNumber;
+
+    @OneToMany(mappedBy = "jobCard", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<Invoice> invoices = new ArrayList<>();
 
     private LocalDateTime createdAt;
 

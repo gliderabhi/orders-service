@@ -33,6 +33,8 @@ dependencies {
     compileOnly("org.projectlombok:lombok:1.18.38")
     annotationProcessor("org.projectlombok:lombok:1.18.38")
     runtimeOnly("com.mysql:mysql-connector-j")
+    implementation("org.apache.pdfbox:pdfbox:3.0.3")
+    implementation("org.springframework.cloud:spring-cloud-starter-loadbalancer")
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
 }

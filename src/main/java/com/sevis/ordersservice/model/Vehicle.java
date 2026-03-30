@@ -17,10 +17,8 @@ public class Vehicle {
     @Column(unique = true, nullable = false)
     private String regNumber;
 
-    @Column(nullable = false)
     private String make;
 
-    @Column(nullable = false)
     private String model;
 
     private String variant;

@@ -33,10 +33,11 @@ public class JobCardService {
 
     // ── List ──────────────────────────────────────────────────────────────────
 
+    @Transactional(readOnly = true)
     public List<JobCardSummaryResponse> getAll(Long dealerId) {
         List<JobCard> cards = (dealerId != null)
                 ? jobCardRepository.findByDealerIdWithSummary(dealerId)
-                : jobCardRepository.findAllWithSummary();
+                : jobCardRepository.findAll();
         return cards.stream().map(JobCardSummaryResponse::new).collect(Collectors.toList());
     }
 
@@ -54,6 +55,7 @@ public class JobCardService {
         jc.getAncillaryItems().size();
         jc.getChecks();
         jc.getBilling();
+        jc.getInvoices().size();
         return new JobCardDetailResponse(jc);
     }
 
