@@ -1,6 +1,9 @@
 package com.sevis.ordersservice.service;
 
+import com.sevis.ordersservice.dto.request.AncillaryItemRequest;
 import com.sevis.ordersservice.dto.request.CreateJobCardRequest;
+import com.sevis.ordersservice.dto.request.LabourItemRequest;
+import com.sevis.ordersservice.dto.request.PartItemRequest;
 import com.sevis.ordersservice.dto.response.JobCardDetailResponse;
 import com.sevis.ordersservice.dto.response.JobCardSummaryResponse;
 import com.sevis.ordersservice.model.*;
@@ -14,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -242,13 +246,155 @@ public class JobCardService {
         return new JobCardDetailResponse(jobCardRepository.save(jc));
     }
 
+    // ── Generate PDF bill ─────────────────────────────────────────────────────
+
+    @Transactional(readOnly = true)
+    public byte[] generatePdf(Long id) {
+        JobCard jc = jobCardRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Job card not found"));
+        jc.getCustomer().getName();
+        jc.getVehicle().getRegNumber();
+        jc.getLabourItems().size();
+        jc.getParts().size();
+        jc.getAncillaryItems().size();
+        jc.getBilling();
+        try {
+            return JobCardPdfGenerator.generate(jc);
+        } catch (Exception e) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Failed to generate PDF: " + e.getMessage());
+        }
+    }
+
+    // ── Add / delete labour items ─────────────────────────────────────────────
+
+    @Transactional
+    public JobCardDetailResponse addLabour(Long id, LabourItemRequest req, Long dealerId) {
+        JobCard jc = getForUpdate(id, dealerId);
+        JobCardLabour l = new JobCardLabour();
+        l.setJobCard(jc);
+        l.setDescription(req.getDescription());
+        l.setType(req.getType() != null ? req.getType().toUpperCase() : "LABOUR");
+        l.setQuantity(req.getQuantity());
+        l.setRate(req.getRate());
+        l.setAmount(req.getQuantity() * req.getRate());
+        jc.getLabourItems().add(l);
+        recalcBilling(jc);
+        return new JobCardDetailResponse(jobCardRepository.save(jc));
+    }
+
+    @Transactional
+    public JobCardDetailResponse deleteLabour(Long id, Long labourId, Long dealerId) {
+        JobCard jc = getForUpdate(id, dealerId);
+        jc.getLabourItems().removeIf(l -> l.getId().equals(labourId));
+        recalcBilling(jc);
+        return new JobCardDetailResponse(jobCardRepository.save(jc));
+    }
+
+    // ── Add / delete parts ────────────────────────────────────────────────────
+
+    @Transactional
+    public JobCardDetailResponse addPart(Long id, PartItemRequest req, Long dealerId) {
+        JobCard jc = getForUpdate(id, dealerId);
+        JobCardPart p = new JobCardPart();
+        p.setJobCard(jc);
+        p.setPartNumber(req.getPartNumber());
+        p.setDescription(req.getDescription());
+        p.setPartType(req.getPartType() != null ? req.getPartType().toUpperCase() : "OEM");
+        p.setQuantity(req.getQuantity());
+        p.setUnitPrice(req.getUnitPrice());
+        p.setTotalPrice(req.getQuantity() * req.getUnitPrice());
+        jc.getParts().add(p);
+        recalcBilling(jc);
+        return new JobCardDetailResponse(jobCardRepository.save(jc));
+    }
+
+    @Transactional
+    public JobCardDetailResponse deletePart(Long id, Long partId, Long dealerId) {
+        JobCard jc = getForUpdate(id, dealerId);
+        jc.getParts().removeIf(p -> p.getId().equals(partId));
+        recalcBilling(jc);
+        return new JobCardDetailResponse(jobCardRepository.save(jc));
+    }
+
+    // ── Add / delete ancillary items ──────────────────────────────────────────
+
+    @Transactional
+    public JobCardDetailResponse addAncillary(Long id, AncillaryItemRequest req, Long dealerId) {
+        JobCard jc = getForUpdate(id, dealerId);
+        JobCardAncillary a = new JobCardAncillary();
+        a.setJobCard(jc);
+        a.setDescription(req.getDescription());
+        a.setAmount(req.getAmount());
+        jc.getAncillaryItems().add(a);
+        recalcBilling(jc);
+        return new JobCardDetailResponse(jobCardRepository.save(jc));
+    }
+
+    @Transactional
+    public JobCardDetailResponse deleteAncillary(Long id, Long ancId, Long dealerId) {
+        JobCard jc = getForUpdate(id, dealerId);
+        jc.getAncillaryItems().removeIf(a -> a.getId().equals(ancId));
+        recalcBilling(jc);
+        return new JobCardDetailResponse(jobCardRepository.save(jc));
+    }
+
+    // ── Private helpers ───────────────────────────────────────────────────────
+
+    private JobCard getForUpdate(Long id, Long dealerId) {
+        JobCard jc = jobCardRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Job card not found"));
+        if (dealerId != null && !jc.getDealerId().equals(dealerId))
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied");
+        jc.getLabourItems().size();
+        jc.getParts().size();
+        jc.getAncillaryItems().size();
+        return jc;
+    }
+
+    private void recalcBilling(JobCard jc) {
+        double labourTotal = jc.getLabourItems().stream().mapToDouble(JobCardLabour::getAmount).sum();
+        double partsTotal  = jc.getParts().stream().mapToDouble(JobCardPart::getTotalPrice).sum();
+        double ancTotal    = jc.getAncillaryItems().stream().mapToDouble(JobCardAncillary::getAmount).sum();
+        double subTotal    = labourTotal + partsTotal + ancTotal;
+
+        JobCardBilling b = jc.getBilling();
+        if (b == null) {
+            b = new JobCardBilling();
+            b.setJobCard(jc);
+            jc.setBilling(b);
+        }
+        double discount   = b.getDiscount();
+        double taxable    = subTotal - discount;
+        double cgstAmt    = taxable * b.getCgstRate()  / 100;
+        double sgstAmt    = taxable * b.getSgstRate()  / 100;
+        double igstAmt    = taxable * b.getIgstRate()  / 100;
+        double grandTotal = taxable + cgstAmt + sgstAmt + igstAmt;
+        b.setLabourTotal(labourTotal);
+        b.setPartsTotal(partsTotal);
+        b.setAncillaryTotal(ancTotal);
+        b.setSubTotal(subTotal);
+        b.setTaxableAmount(taxable);
+        b.setCgstAmount(cgstAmt);
+        b.setSgstAmount(sgstAmt);
+        b.setIgstAmount(igstAmt);
+        b.setGrandTotal(grandTotal);
+        b.setBalanceDue(grandTotal - b.getAdvanceAmount());
+    }
+
     // ── Job card number generation ─────────────────────────────────────────────
 
     private String generateJobCardNumber() {
-        LocalDate today = LocalDate.now();
+        // 1. Use LocalDateTime to get both Date and Time
+        LocalDateTime now = LocalDateTime.now();
+
+        // 2. Extract just the date part for your repository count query
+        LocalDate today = now.toLocalDate();
         long countToday = jobCardRepository.countByDate(today);
+
+        // 3. Format the 'now' object (LocalDateTime) which supports Time fields
         return String.format("JC-%s-%04d",
-                today.format(DateTimeFormatter.ofPattern("yyyyMMdd")),
+                now.format(DateTimeFormatter.ofPattern("yyyyMMddHHmmssSSS")),
                 countToday + 1);
     }
 }
