@@ -4,8 +4,10 @@ import com.sevis.ordersservice.dto.request.AncillaryItemRequest;
 import com.sevis.ordersservice.dto.request.CreateJobCardRequest;
 import com.sevis.ordersservice.dto.request.LabourItemRequest;
 import com.sevis.ordersservice.dto.request.PartItemRequest;
+import com.sevis.ordersservice.dto.response.InvoiceDetailResponse;
 import com.sevis.ordersservice.dto.response.JobCardDetailResponse;
 import com.sevis.ordersservice.dto.response.JobCardSummaryResponse;
+import com.sevis.ordersservice.service.InvoiceService;
 import com.sevis.ordersservice.service.JobCardService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -23,7 +25,8 @@ import java.util.List;
 @RequiredArgsConstructor
 public class JobCardController {
 
-    private final JobCardService jobCardService;
+    private final JobCardService  jobCardService;
+    private final InvoiceService  invoiceService;
 
     @GetMapping
     public List<JobCardSummaryResponse> getAll(
@@ -70,6 +73,16 @@ public class JobCardController {
         headers.setContentDisposition(
                 ContentDisposition.attachment().filename("bill-" + id + ".pdf").build());
         return ResponseEntity.ok().headers(headers).body(pdf);
+    }
+
+    // ── Generate / update invoice from job card ───────────────────────────────
+
+    @PostMapping("/{id}/invoice")
+    public ResponseEntity<InvoiceDetailResponse> generateInvoice(
+            @PathVariable Long id,
+            @RequestHeader(value = "X-User-Id", defaultValue = "0") Long dealerId
+    ) {
+        return ResponseEntity.ok(invoiceService.generateOrUpdateInvoice(id, dealerId));
     }
 
     // ── Labour CRUD ───────────────────────────────────────────────────────────

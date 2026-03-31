@@ -206,6 +206,151 @@ public class InvoiceService {
         }
     }
 
+    // ── Generate / update invoice from job card ───────────────────────────────
+
+    @Transactional
+    public InvoiceDetailResponse generateOrUpdateInvoice(Long jobCardId, Long dealerId) {
+        JobCard jc = jobCardRepository.findById(jobCardId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Job card not found"));
+
+        // Init all lazy collections we need
+        jc.getLabourItems().size();
+        jc.getParts().size();
+        jc.getAncillaryItems().size();
+        if (jc.getCustomer() != null) jc.getCustomer().getName();
+        if (jc.getVehicle() != null) jc.getVehicle().getRegNumber();
+        jc.getBilling();
+
+        // Find existing invoice (take first if multiple, which shouldn't happen)
+        List<Invoice> existing = invoiceRepository.findByJobCardId(jobCardId);
+        Invoice invoice = existing.isEmpty() ? new Invoice() : existing.get(0);
+        boolean isNew = invoice.getId() == null;
+
+        if (isNew) {
+            // Generate invoice number: INV-YYYYMMDD-NNNN
+            LocalDate today = LocalDate.now();
+            long seq = invoiceRepository.countByInvoiceDate(today) + 1;
+            String invNumber = String.format("INV-%s-%04d",
+                    today.format(DateTimeFormatter.ofPattern("yyyyMMdd")), seq);
+            invoice.setInvoiceNumber(invNumber);
+            invoice.setInvoiceDate(today);
+        } else {
+            // Update date to today on re-generation
+            invoice.setInvoiceDate(LocalDate.now());
+            // Clear existing line items — orphanRemoval will delete them
+            invoice.getLineItems().clear();
+        }
+
+        invoice.setJobCard(jc);
+        invoice.setCustomer(jc.getCustomer());
+        invoice.setDealerId(dealerId);
+        invoice.setOriginalJobCardNumber(jc.getJobCardNumber());
+        invoice.setJobCardDate(jc.getDateIn());
+        invoice.setServiceType(jc.getServiceType());
+        if (jc.getVehicle() != null) {
+            invoice.setVehicleRegNo(jc.getVehicle().getRegNumber());
+            invoice.setChassisNo(jc.getVehicle().getChassisNo());
+        }
+        invoice.setKms(jc.getKmIn() > 0 ? jc.getKmIn() : null);
+
+        // Build line items
+        int lineNo = 1;
+        double labourTaxable = 0, partsTaxable = 0;
+        double cgstTotal = 0, sgstTotal = 0;
+
+        JobCardBilling b = jc.getBilling();
+        double cgstRate = b != null ? b.getCgstRate() : 0;
+        double sgstRate = b != null ? b.getSgstRate() : 0;
+
+        for (JobCardLabour l : jc.getLabourItems()) {
+            InvoiceLineItem li = new InvoiceLineItem();
+            li.setInvoice(invoice);
+            li.setLineNumber(lineNo++);
+            li.setDescription(l.getDescription());
+            li.setType(l.getType());
+            li.setQuantity((double) l.getQuantity());
+            li.setRate(l.getRate());
+            double base = l.getAmount();
+            li.setBaseAmount(base);
+            li.setDiscountAmount(0.0);
+            li.setTaxableAmount(base);
+            double cAmt = base * cgstRate / 100;
+            double sAmt = base * sgstRate / 100;
+            li.setCgstRate(cgstRate);
+            li.setCgstAmount(cAmt);
+            li.setSgstRate(sgstRate);
+            li.setSgstAmount(sAmt);
+            li.setTotalAmount(base + cAmt + sAmt);
+            labourTaxable += base;
+            cgstTotal += cAmt;
+            sgstTotal += sAmt;
+            invoice.getLineItems().add(li);
+        }
+
+        for (JobCardPart p : jc.getParts()) {
+            InvoiceLineItem li = new InvoiceLineItem();
+            li.setInvoice(invoice);
+            li.setLineNumber(lineNo++);
+            li.setPartNumber(p.getPartNumber());
+            li.setDescription(p.getDescription());
+            li.setType("PARTS");
+            li.setQuantity((double) p.getQuantity());
+            li.setRate(p.getUnitPrice());
+            double base = p.getTotalPrice();
+            li.setBaseAmount(base);
+            li.setDiscountAmount(0.0);
+            li.setTaxableAmount(base);
+            double cAmt = base * cgstRate / 100;
+            double sAmt = base * sgstRate / 100;
+            li.setCgstRate(cgstRate);
+            li.setCgstAmount(cAmt);
+            li.setSgstRate(sgstRate);
+            li.setSgstAmount(sAmt);
+            li.setTotalAmount(base + cAmt + sAmt);
+            partsTaxable += base;
+            cgstTotal += cAmt;
+            sgstTotal += sAmt;
+            invoice.getLineItems().add(li);
+        }
+
+        for (JobCardAncillary a : jc.getAncillaryItems()) {
+            InvoiceLineItem li = new InvoiceLineItem();
+            li.setInvoice(invoice);
+            li.setLineNumber(lineNo++);
+            li.setDescription(a.getDescription());
+            li.setType("ANCILLARY");
+            li.setQuantity(1.0);
+            li.setRate(a.getAmount());
+            li.setBaseAmount(a.getAmount());
+            li.setDiscountAmount(0.0);
+            li.setTaxableAmount(a.getAmount());
+            double cAmt = a.getAmount() * cgstRate / 100;
+            double sAmt = a.getAmount() * sgstRate / 100;
+            li.setCgstRate(cgstRate);
+            li.setCgstAmount(cAmt);
+            li.setSgstRate(sgstRate);
+            li.setSgstAmount(sAmt);
+            li.setTotalAmount(a.getAmount() + cAmt + sAmt);
+            cgstTotal += cAmt;
+            sgstTotal += sAmt;
+            invoice.getLineItems().add(li);
+        }
+
+        invoice.setPartsNetTaxableAmount(partsTaxable);
+        invoice.setLabourTaxableAmount(labourTaxable);
+        invoice.setCgstAmount(cgstTotal);
+        invoice.setSgstAmount(sgstTotal);
+        invoice.setIgstAmount(0.0);
+        invoice.setTotalTaxAmount(cgstTotal + sgstTotal);
+        invoice.setGrandTotal(b != null ? b.getGrandTotal()
+                : invoice.getLineItems().stream().mapToDouble(InvoiceLineItem::getTotalAmount).sum());
+        invoice.setAdjustments(0.0);
+
+        Invoice saved = invoiceRepository.save(invoice);
+        saved.getLineItems().size(); // ensure loaded for response
+        return new InvoiceDetailResponse(saved);
+    }
+
     // ── Private helpers ───────────────────────────────────────────────────────
 
     private JobCard createJobCardFromInvoice(
