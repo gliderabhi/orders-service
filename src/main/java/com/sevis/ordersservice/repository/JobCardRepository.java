@@ -26,4 +26,19 @@ public interface JobCardRepository extends JpaRepository<JobCard, Long> {
 
     @Query("SELECT COUNT(jc) FROM JobCard jc WHERE jc.dateIn = :date")
     long countByDate(@Param("date") LocalDate date);
+
+    @Query("SELECT COUNT(jc) FROM JobCard jc WHERE jc.status = :status")
+    long countByStatus(@Param("status") String status);
+
+    @Query("SELECT COALESCE(SUM(b.labourTotal), 0) FROM JobCardBilling b")
+    double sumLabourTotal();
+
+    @Query("SELECT COALESCE(SUM(b.partsTotal), 0) FROM JobCardBilling b")
+    double sumPartsTotal();
+
+    @Query("SELECT COALESCE(SUM(b.ancillaryTotal), 0) FROM JobCardBilling b")
+    double sumAncillaryTotal();
+
+    @Query("SELECT COALESCE(SUM(b.grandTotal), 0) FROM JobCardBilling b WHERE b.jobCard.status IN ('DELIVERED', 'CLOSED')")
+    double sumGrandTotalDeliveredClosed();
 }

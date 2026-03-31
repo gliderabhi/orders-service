@@ -206,6 +206,15 @@ public class InvoiceService {
         }
     }
 
+    // ── Auto-update invoice if one already exists ─────────────────────────────
+
+    @Transactional
+    public void updateInvoiceIfExists(Long jobCardId, Long dealerId) {
+        if (!invoiceRepository.findByJobCardId(jobCardId).isEmpty()) {
+            generateOrUpdateInvoice(jobCardId, dealerId);
+        }
+    }
+
     // ── Generate / update invoice from job card ───────────────────────────────
 
     @Transactional

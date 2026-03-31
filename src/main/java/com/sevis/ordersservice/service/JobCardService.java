@@ -11,17 +11,25 @@ import com.sevis.ordersservice.repository.CustomerRepository;
 import com.sevis.ordersservice.repository.JobCardRepository;
 import com.sevis.ordersservice.repository.VehicleRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.RestTemplate;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class JobCardService {
@@ -29,6 +37,11 @@ public class JobCardService {
     private final JobCardRepository    jobCardRepository;
     private final CustomerRepository   customerRepository;
     private final VehicleRepository    vehicleRepository;
+    private final InvoiceService       invoiceService;
+    private final RestTemplate         restTemplate;
+
+    private static final String STOCK_DEDUCT_URL  = "http://inventory-service/api/stock/deduct";
+    private static final String STOCK_RESTORE_URL = "http://inventory-service/api/stock/restore";
 
     private static final List<String> VALID_SERVICE_TYPES =
             List.of("PERIODIC_SERVICE", "RUNNING_REPAIR", "BODYWORK", "INSPECTION", "ACCIDENTAL", "WARRANTY");
@@ -280,7 +293,9 @@ public class JobCardService {
         l.setAmount(req.getQuantity() * req.getRate());
         jc.getLabourItems().add(l);
         recalcBilling(jc);
-        return new JobCardDetailResponse(jobCardRepository.save(jc));
+        JobCardDetailResponse saved = new JobCardDetailResponse(jobCardRepository.save(jc));
+        invoiceService.updateInvoiceIfExists(id, jc.getDealerId());
+        return saved;
     }
 
     @Transactional
@@ -288,7 +303,9 @@ public class JobCardService {
         JobCard jc = getForUpdate(id, dealerId);
         jc.getLabourItems().removeIf(l -> l.getId().equals(labourId));
         recalcBilling(jc);
-        return new JobCardDetailResponse(jobCardRepository.save(jc));
+        JobCardDetailResponse saved = new JobCardDetailResponse(jobCardRepository.save(jc));
+        invoiceService.updateInvoiceIfExists(id, jc.getDealerId());
+        return saved;
     }
 
     // ── Add / delete parts ────────────────────────────────────────────────────
@@ -306,15 +323,22 @@ public class JobCardService {
         p.setTotalPrice(req.getQuantity() * req.getUnitPrice());
         jc.getParts().add(p);
         recalcBilling(jc);
-        return new JobCardDetailResponse(jobCardRepository.save(jc));
+        JobCardDetailResponse saved = new JobCardDetailResponse(jobCardRepository.save(jc));
+        deductStock(jc.getDealerId(), req.getPartNumber(), req.getQuantity());
+        invoiceService.updateInvoiceIfExists(id, jc.getDealerId());
+        return saved;
     }
 
     @Transactional
     public JobCardDetailResponse deletePart(Long id, Long partId, Long dealerId) {
         JobCard jc = getForUpdate(id, dealerId);
+        Optional<JobCardPart> toDelete = jc.getParts().stream().filter(p -> p.getId().equals(partId)).findFirst();
         jc.getParts().removeIf(p -> p.getId().equals(partId));
         recalcBilling(jc);
-        return new JobCardDetailResponse(jobCardRepository.save(jc));
+        JobCardDetailResponse saved = new JobCardDetailResponse(jobCardRepository.save(jc));
+        toDelete.ifPresent(p -> restoreStock(jc.getDealerId(), p.getPartNumber(), p.getQuantity()));
+        invoiceService.updateInvoiceIfExists(id, jc.getDealerId());
+        return saved;
     }
 
     // ── Add / delete ancillary items ──────────────────────────────────────────
@@ -328,7 +352,9 @@ public class JobCardService {
         a.setAmount(req.getAmount());
         jc.getAncillaryItems().add(a);
         recalcBilling(jc);
-        return new JobCardDetailResponse(jobCardRepository.save(jc));
+        JobCardDetailResponse saved = new JobCardDetailResponse(jobCardRepository.save(jc));
+        invoiceService.updateInvoiceIfExists(id, jc.getDealerId());
+        return saved;
     }
 
     @Transactional
@@ -336,7 +362,9 @@ public class JobCardService {
         JobCard jc = getForUpdate(id, dealerId);
         jc.getAncillaryItems().removeIf(a -> a.getId().equals(ancId));
         recalcBilling(jc);
-        return new JobCardDetailResponse(jobCardRepository.save(jc));
+        JobCardDetailResponse saved = new JobCardDetailResponse(jobCardRepository.save(jc));
+        invoiceService.updateInvoiceIfExists(id, jc.getDealerId());
+        return saved;
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
@@ -380,6 +408,30 @@ public class JobCardService {
         b.setIgstAmount(igstAmt);
         b.setGrandTotal(grandTotal);
         b.setBalanceDue(grandTotal - b.getAdvanceAmount());
+    }
+
+    // ── Stock helpers ─────────────────────────────────────────────────────────
+
+    private void deductStock(Long dealerId, String partNumber, int quantity) {
+        if (partNumber == null || partNumber.isBlank() || quantity <= 0) return;
+        callStock(STOCK_DEDUCT_URL, dealerId, partNumber, quantity);
+    }
+
+    private void restoreStock(Long dealerId, String partNumber, int quantity) {
+        if (partNumber == null || partNumber.isBlank() || quantity <= 0) return;
+        callStock(STOCK_RESTORE_URL, dealerId, partNumber, quantity);
+    }
+
+    private void callStock(String url, Long dealerId, String partNumber, int quantity) {
+        try {
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.set("X-User-Id", String.valueOf(dealerId));
+            List<Map<String, Object>> body = List.of(Map.of("partNumber", partNumber, "quantity", quantity));
+            restTemplate.postForEntity(url, new HttpEntity<>(body, headers), Void.class);
+        } catch (Exception e) {
+            log.warn("Stock update failed for part {}: {}", partNumber, e.getMessage());
+        }
     }
 
     // ── Job card number generation ─────────────────────────────────────────────
