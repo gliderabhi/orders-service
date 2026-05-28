@@ -212,6 +212,7 @@ public class JobCardDetailResponse {
         private final double advanceAmount;
         private final double balanceDue;
         private final String paymentType;
+        private final String paymentStatus;
 
         public BillingInfo(JobCardBilling b) {
             this.labourTotal     = b.getLabourTotal();
@@ -230,6 +231,7 @@ public class JobCardDetailResponse {
             this.advanceAmount   = b.getAdvanceAmount();
             this.balanceDue      = b.getBalanceDue();
             this.paymentType     = b.getPaymentType();
+            this.paymentStatus   = b.getPaymentStatus() != null ? b.getPaymentStatus() : "PENDING";
         }
     }
 

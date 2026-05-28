@@ -75,6 +75,18 @@ public class JobCardController {
         return ResponseEntity.ok().headers(headers).body(pdf);
     }
 
+    // ── Update payment info ───────────────────────────────────────────────────
+
+    @PatchMapping("/{id}/payment")
+    public ResponseEntity<JobCardDetailResponse> updatePayment(
+            @PathVariable Long id,
+            @RequestParam String paymentType,
+            @RequestParam String paymentStatus,
+            @RequestHeader(value = "X-User-Id", defaultValue = "0") Long userId
+    ) {
+        return ResponseEntity.ok(jobCardService.updatePayment(id, paymentType, paymentStatus, userId));
+    }
+
     // ── Generate / update invoice from job card ───────────────────────────────
 
     @PostMapping("/{id}/invoice")

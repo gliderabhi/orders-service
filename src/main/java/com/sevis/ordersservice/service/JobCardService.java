@@ -259,6 +259,47 @@ public class JobCardService {
         return new JobCardDetailResponse(jobCardRepository.save(jc));
     }
 
+    // ── Update payment ────────────────────────────────────────────────────────
+
+    @Transactional
+    public JobCardDetailResponse updatePayment(Long id, String paymentType, String paymentStatus, Long dealerId) {
+        JobCard jc = jobCardRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Job card not found"));
+        if (!"CLOSED".equals(jc.getStatus())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Payment can only be recorded for CLOSED job cards");
+        }
+
+        JobCardBilling billing = jc.getBilling();
+        if (billing == null) {
+            billing = new JobCardBilling();
+            billing.setJobCard(jc);
+            jc.setBilling(billing);
+        }
+        billing.setPaymentType(paymentType.toUpperCase());
+        billing.setPaymentStatus(paymentStatus.toUpperCase());
+        jobCardRepository.save(jc);
+
+        // Auto-generate invoice when marked as PAID
+        if ("PAID".equalsIgnoreCase(paymentStatus)) {
+            try {
+                invoiceService.generateOrUpdateInvoice(id, dealerId != null ? dealerId : 0L);
+            } catch (Exception e) {
+                log.warn("Invoice generation failed for job card {}: {}", id, e.getMessage());
+            }
+        }
+
+        // Re-fetch with all collections for response
+        jc.getCustomer().getName();
+        jc.getVehicle().getRegNumber();
+        jc.getLabourItems().size();
+        jc.getParts().size();
+        jc.getAncillaryItems().size();
+        jc.getBilling();
+        jc.getInvoices().size();
+        return new JobCardDetailResponse(jc);
+    }
+
     // ── Generate PDF bill ─────────────────────────────────────────────────────
 
     @Transactional(readOnly = true)

@@ -171,6 +171,13 @@ public class InvoiceService {
         return new InvoiceDetailResponse(saved);
     }
 
+    // ── List all invoices ─────────────────────────────────────────────────────
+    @Transactional(readOnly = true)
+    public List<InvoiceDetailResponse> getAll() {
+        return invoiceRepository.findAll()
+                .stream().map(InvoiceDetailResponse::new).toList();
+    }
+
     // ── Fetch invoice by job card ─────────────────────────────────────────────
     @Transactional(readOnly = true)
     public List<InvoiceDetailResponse> getByJobCard(Long jobCardId) {

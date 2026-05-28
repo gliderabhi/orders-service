@@ -36,5 +36,6 @@ public class JobCardBilling {
     private double advanceAmount;
     private double balanceDue;
 
-    private String paymentType = "CASH";  // CASH, CARD, ONLINE, CREDIT
+    private String paymentType   = "CASH";     // CASH, CARD, UPI, ONLINE, CHEQUE, CREDIT
+    private String paymentStatus = "PENDING";  // PENDING, PAID
 }

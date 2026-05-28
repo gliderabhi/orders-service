@@ -19,6 +19,11 @@ public class InvoiceController {
 
     private final InvoiceService invoiceService;
 
+    @GetMapping
+    public List<InvoiceDetailResponse> getAll() {
+        return invoiceService.getAll();
+    }
+
     @PostMapping("/upload")
     public ResponseEntity<InvoiceDetailResponse> upload(
             @RequestBody byte[] pdfBytes,
