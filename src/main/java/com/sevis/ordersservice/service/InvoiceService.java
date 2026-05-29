@@ -173,9 +173,16 @@ public class InvoiceService {
 
     // ── List all invoices ─────────────────────────────────────────────────────
     @Transactional(readOnly = true)
-    public List<InvoiceDetailResponse> getAll() {
-        return invoiceRepository.findAll()
-                .stream().map(InvoiceDetailResponse::new).toList();
+    public List<InvoiceDetailResponse> getAll(Long dealerId, LocalDate from, LocalDate to) {
+        boolean dated = (from != null || to != null);
+        var list = dated
+                ? (dealerId != null
+                        ? invoiceRepository.findByDealerIdAndDateRange(dealerId, from, to)
+                        : invoiceRepository.findByDateRange(from, to))
+                : (dealerId != null
+                        ? invoiceRepository.findByDealerIdOrderByInvoiceDateDesc(dealerId)
+                        : invoiceRepository.findAll());
+        return list.stream().map(InvoiceDetailResponse::new).toList();
     }
 
     // ── Fetch invoice by job card ─────────────────────────────────────────────

@@ -23,6 +23,10 @@ public class JobCardLabour {
 
     private String type = "LABOUR";  // LABOUR, INSPECTION, SUBLET
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "technician_id")
+    private Technician technician;
+
     private int quantity = 1;
     private double rate;
     private double amount;

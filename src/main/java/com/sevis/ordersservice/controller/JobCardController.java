@@ -30,12 +30,18 @@ public class JobCardController {
 
     @GetMapping
     public List<JobCardSummaryResponse> getAll(
-            @RequestHeader(value = "X-User-Id",   defaultValue = "0")    Long userId,
-            @RequestHeader(value = "X-User-Role", defaultValue = "")     String userRole
+            @RequestHeader(value = "X-User-Id",   defaultValue = "0") Long userId,
+            @RequestHeader(value = "X-User-Role", defaultValue = "")  String userRole,
+            @RequestHeader(value = "X-Dealer-Id", required = false)   Long dealerIdHeader,
+            @RequestParam(required = false) String from,
+            @RequestParam(required = false) String to
     ) {
-        // Admins see all; dealers see only their own
-        Long dealerFilter = "ADMIN".equals(userRole) ? null : userId;
-        return jobCardService.getAll(dealerFilter);
+        Long dealerFilter = "ADMIN".equals(userRole) ? null
+                : "TECHNICIAN".equals(userRole) && dealerIdHeader != null ? dealerIdHeader
+                : userId;
+        java.time.LocalDate fromDate = (from != null && !from.isBlank()) ? java.time.LocalDate.parse(from) : null;
+        java.time.LocalDate toDate   = (to   != null && !to.isBlank())   ? java.time.LocalDate.parse(to)   : null;
+        return jobCardService.getAll(dealerFilter, fromDate, toDate);
     }
 
     @GetMapping("/{id}")
@@ -46,8 +52,12 @@ public class JobCardController {
     @PostMapping
     public ResponseEntity<JobCardDetailResponse> create(
             @Valid @RequestBody CreateJobCardRequest request,
-            @RequestHeader(value = "X-User-Id", defaultValue = "0") Long dealerId
+            @RequestHeader(value = "X-User-Id",   defaultValue = "0") Long dealerId,
+            @RequestHeader(value = "X-User-Role", defaultValue = "")  String userRole
     ) {
+        if ("TECHNICIAN".equals(userRole)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(jobCardService.create(request, dealerId));
     }
@@ -115,6 +125,7 @@ public class JobCardController {
             @RequestHeader(value = "X-User-Id",   defaultValue = "0") Long userId,
             @RequestHeader(value = "X-User-Role", defaultValue = "")  String userRole
     ) {
+        if ("TECHNICIAN".equals(userRole)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         return ResponseEntity.ok(jobCardService.deleteLabour(id, labourId, "ADMIN".equals(userRole) ? null : userId));
     }
 
@@ -136,6 +147,7 @@ public class JobCardController {
             @RequestHeader(value = "X-User-Id",   defaultValue = "0") Long userId,
             @RequestHeader(value = "X-User-Role", defaultValue = "")  String userRole
     ) {
+        if ("TECHNICIAN".equals(userRole)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         return ResponseEntity.ok(jobCardService.deletePart(id, partId, "ADMIN".equals(userRole) ? null : userId));
     }
 
@@ -157,6 +169,7 @@ public class JobCardController {
             @RequestHeader(value = "X-User-Id",   defaultValue = "0") Long userId,
             @RequestHeader(value = "X-User-Role", defaultValue = "")  String userRole
     ) {
+        if ("TECHNICIAN".equals(userRole)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         return ResponseEntity.ok(jobCardService.deleteAncillary(id, ancId, "ADMIN".equals(userRole) ? null : userId));
     }
 }

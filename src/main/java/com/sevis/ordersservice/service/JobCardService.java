@@ -9,6 +9,7 @@ import com.sevis.ordersservice.dto.response.JobCardSummaryResponse;
 import com.sevis.ordersservice.model.*;
 import com.sevis.ordersservice.repository.CustomerRepository;
 import com.sevis.ordersservice.repository.JobCardRepository;
+import com.sevis.ordersservice.repository.TechnicianRepository;
 import com.sevis.ordersservice.repository.VehicleRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -37,6 +38,7 @@ public class JobCardService {
     private final JobCardRepository    jobCardRepository;
     private final CustomerRepository   customerRepository;
     private final VehicleRepository    vehicleRepository;
+    private final TechnicianRepository technicianRepository;
     private final InvoiceService       invoiceService;
     private final RestTemplate         restTemplate;
 
@@ -51,10 +53,18 @@ public class JobCardService {
     // ── List ──────────────────────────────────────────────────────────────────
 
     @Transactional(readOnly = true)
-    public List<JobCardSummaryResponse> getAll(Long dealerId) {
-        List<JobCard> cards = (dealerId != null)
-                ? jobCardRepository.findByDealerIdWithSummary(dealerId)
-                : jobCardRepository.findAll();
+    public List<JobCardSummaryResponse> getAll(Long dealerId, LocalDate from, LocalDate to) {
+        List<JobCard> cards;
+        boolean hasDateFilter = from != null || to != null;
+        if (hasDateFilter) {
+            cards = (dealerId != null)
+                    ? jobCardRepository.findByDealerIdAndDateRange(dealerId, from, to)
+                    : jobCardRepository.findByDateRange(from, to);
+        } else {
+            cards = (dealerId != null)
+                    ? jobCardRepository.findByDealerIdWithSummary(dealerId)
+                    : jobCardRepository.findAllByOrderByCreatedAtDesc();
+        }
         return cards.stream().map(JobCardSummaryResponse::new).collect(Collectors.toList());
     }
 
@@ -329,6 +339,9 @@ public class JobCardService {
         l.setJobCard(jc);
         l.setDescription(req.getDescription());
         l.setType(req.getType() != null ? req.getType().toUpperCase() : "LABOUR");
+        if (req.getTechnicianId() != null) {
+            technicianRepository.findById(req.getTechnicianId()).ifPresent(l::setTechnician);
+        }
         l.setQuantity(req.getQuantity());
         l.setRate(req.getRate());
         l.setAmount(req.getQuantity() * req.getRate());

@@ -1,5 +1,6 @@
 package com.sevis.ordersservice.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
@@ -28,6 +29,7 @@ public class Vehicle {
     private String color;
     private String fuelType;  // PETROL, DIESEL, CNG, ELECTRIC, HYBRID
 
+    @JsonIgnore
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "customer_id")
     private Customer customer;

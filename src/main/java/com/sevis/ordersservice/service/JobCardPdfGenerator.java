@@ -22,19 +22,22 @@ public class JobCardPdfGenerator {
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
     // Labour table: Sl | Description | Type | Qty | Rate | Amount
-    private static final float[] LC = {20, 200, 65, 28, 105, 105};
+    private static final float[] LC = {22, 198, 72, 30, 100, 101};
     private static final String[] LH = {"Sl", "Description", "Type", "Qty", "Rate", "Amount"};
 
     // Parts table: Sl | Part No | Description | Type | Qty | Unit Price | Total
-    private static final float[] PC = {20, 75, 160, 58, 28, 91, 91};
+    private static final float[] PC = {22, 78, 138, 76, 30, 88, 91};
     private static final String[] PH = {"Sl", "Part No", "Description", "Type", "Qty", "Unit Price", "Total"};
 
     // Ancillary: Sl | Description | Amount
-    private static final float[] AC = {20, 393, 110};
+    private static final float[] AC = {22, 390, 111};
     private static final String[] AH = {"Sl", "Description", "Amount"};
 
-    private static final float ROW  = 13f;
-    private static final float THDR = 16f;
+    // Table layout
+    private static final float ROW  = 22f;   // data row height
+    private static final float THDR = 24f;   // header row height
+    private static final float HPAD = 6f;    // horizontal cell padding (left/right)
+    private static final float VPAD = 8f;    // vertical text baseline offset from row bottom
 
     private static final Color DARK  = new Color(30, 30, 30);
     private static final Color BLUE  = new Color(30, 60, 120);
@@ -51,12 +54,12 @@ public class JobCardPdfGenerator {
             doc.addPage(page);
 
             try (PDPageContentStream cs = new PDPageContentStream(doc, page)) {
-                float y = H - M;
+                float y = H - 20f;
 
                 // ── Title bar ─────────────────────────────────────────────────
-                fill(cs, M, y - 26, CW, 26, new Color(40, 40, 40));
-                textCenter(cs, bold, 13, "SERVICE BILL", W / 2f, y - 19, Color.WHITE);
-                y -= 32;
+                fill(cs, M, y - 32, CW, 32, new Color(28, 62, 118));
+                textCenter(cs, bold, 15, "SERVICE BILL", W / 2f, y - 22, Color.WHITE);
+                y -= 42;
 
                 // ── Job card reference row ─────────────────────────────────────
                 float q = CW / 3f;
@@ -65,22 +68,22 @@ public class JobCardPdfGenerator {
                         jc.getDateIn()  != null ? jc.getDateIn().format(DATE_FMT) : "-",          q - 6);
                 inlineKv(cs, bold, reg, M + q*2, y, "Service:",
                         jc.getServiceType() != null ? jc.getServiceType().replace("_", " ") : "-", q - 6);
-                y -= 14;
-                hline(cs, y, M, CW, 0.5f, LGRAY); y -= 8;
+                y -= 22;
+                hline(cs, y, M, CW, 0.5f, LGRAY); y -= 16;
 
                 // ── Customer | Vehicle ─────────────────────────────────────────
                 float secY = y;
-                text(cs, bold, 7, "CUSTOMER", M, y, BLUE);             y -= 12;
+                text(cs, bold, 9, "CUSTOMER", M, y, BLUE);             y -= 16;
                 Customer cust = jc.getCustomer();
                 if (cust != null) {
-                    if (nb(cust.getName()))    { text(cs, reg, 8, cust.getName(), M, y, DARK);             y -= 11; }
-                    if (nb(cust.getPhone()))   { text(cs, reg, 7, "Ph: " + cust.getPhone(), M, y, MUTED);  y -= 10; }
-                    if (nb(cust.getAddress())) { text(cs, reg, 7, trunc(cust.getAddress(), 40), M, y, MUTED); y -= 10; }
+                    if (nb(cust.getName()))    { text(cs, reg, 10, cust.getName(), M, y, DARK);                y -= 16; }
+                    if (nb(cust.getPhone()))   { text(cs, reg,  9, "Ph: " + cust.getPhone(), M, y, MUTED);    y -= 14; }
+                    if (nb(cust.getAddress())) { text(cs, reg,  9, trunc(cust.getAddress(), 40), M, y, MUTED); y -= 14; }
                 }
 
                 float vx = M + CW * 0.5f;
                 float vy = secY;
-                text(cs, bold, 7, "VEHICLE", vx, vy, BLUE);             vy -= 12;
+                text(cs, bold, 9, "VEHICLE", vx, vy, BLUE);             vy -= 16;
                 Vehicle v = jc.getVehicle();
                 if (v != null) {
                     vy = kv(cs, bold, reg, vx, vy, "Reg No:", v.getRegNumber());
@@ -90,8 +93,8 @@ public class JobCardPdfGenerator {
                     if (jc.getKmIn() > 0)     vy = kv(cs, bold, reg, vx, vy, "KMS:", String.valueOf(jc.getKmIn()));
                 }
 
-                y = Math.min(y, vy) - 8;
-                hline(cs, y, M, CW, 0.5f, LGRAY); y -= 8;
+                y = Math.min(y, vy) - 14;
+                hline(cs, y, M, CW, 0.5f, LGRAY); y -= 16;
 
                 // ── Advisor / complaint row ────────────────────────────────────
                 if (nb(jc.getAdvisorName()) || nb(jc.getCustomerComplaint())) {
@@ -99,66 +102,67 @@ public class JobCardPdfGenerator {
                         inlineKv(cs, bold, reg, M, y, "Advisor:", jc.getAdvisorName(), CW / 2f - 6);
                     if (nb(jc.getCustomerComplaint()))
                         inlineKv(cs, bold, reg, M + CW * 0.5f, y, "Complaint:", trunc(jc.getCustomerComplaint(), 50), CW * 0.5f - 6);
-                    y -= 14;
-                    hline(cs, y, M, CW, 0.5f, LGRAY); y -= 8;
+                    y -= 22;
+                    hline(cs, y, M, CW, 0.5f, LGRAY); y -= 16;
                 }
 
                 // ── Labour items ───────────────────────────────────────────────
                 if (!jc.getLabourItems().isEmpty()) {
-                    text(cs, bold, 8, "LABOUR / WORK DONE", M, y, BLUE); y -= 10;
+                    text(cs, bold, 9, "LABOUR / WORK DONE", M, y, BLUE); y -= 16;
                     y = drawSimpleTable(cs, jc.getLabourItems().stream().map(l -> new String[]{
                             str(jc.getLabourItems().indexOf(l) + 1),
                             s(l.getDescription()), s(l.getType()),
                             String.valueOf(l.getQuantity()), fv(l.getRate()), fv(l.getAmount())
                     }).toList(), LC, LH, bold, reg, y, new int[]{3, 4, 5});
-                    y -= 6;
+                    y -= 18;
                 }
 
                 // ── Parts ──────────────────────────────────────────────────────
                 if (!jc.getParts().isEmpty()) {
-                    text(cs, bold, 8, "PARTS USED", M, y, BLUE); y -= 10;
+                    text(cs, bold, 9, "PARTS USED", M, y, BLUE); y -= 16;
                     y = drawSimpleTable(cs, jc.getParts().stream().map(p -> new String[]{
                             str(jc.getParts().indexOf(p) + 1),
                             s(p.getPartNumber()), s(p.getDescription()), s(p.getPartType()),
                             String.valueOf(p.getQuantity()), fv(p.getUnitPrice()), fv(p.getTotalPrice())
                     }).toList(), PC, PH, bold, reg, y, new int[]{4, 5, 6});
-                    y -= 6;
+                    y -= 18;
                 }
 
                 // ── Ancillary ──────────────────────────────────────────────────
                 if (!jc.getAncillaryItems().isEmpty()) {
-                    text(cs, bold, 8, "ANCILLARY SERVICES", M, y, BLUE); y -= 10;
+                    text(cs, bold, 9, "ANCILLARY SERVICES", M, y, BLUE); y -= 16;
                     y = drawSimpleTable(cs, jc.getAncillaryItems().stream().map(a -> new String[]{
                             str(jc.getAncillaryItems().indexOf(a) + 1),
                             s(a.getDescription()), fv(a.getAmount())
                     }).toList(), AC, AH, bold, reg, y, new int[]{2});
-                    y -= 6;
+                    y -= 18;
                 }
 
                 // ── Billing summary ────────────────────────────────────────────
                 JobCardBilling b = jc.getBilling();
                 if (b != null) {
-                    hline(cs, y, M, CW, 0.5f, LGRAY); y -= 8;
-                    float tx = M + CW * 0.55f;
+                    hline(cs, y, M, CW, 0.5f, LGRAY); y -= 16;
+                    float tx = M + CW * 0.52f;
                     float tw = CW - (tx - M);
-                    if (b.getLabourTotal()    > 0) { totRow(cs, reg,  tx, tw, y, "Labour Total:",     fv(b.getLabourTotal()));    y -= 12; }
-                    if (b.getPartsTotal()     > 0) { totRow(cs, reg,  tx, tw, y, "Parts Total:",      fv(b.getPartsTotal()));     y -= 12; }
-                    if (b.getAncillaryTotal() > 0) { totRow(cs, reg,  tx, tw, y, "Ancillary Total:",  fv(b.getAncillaryTotal())); y -= 12; }
-                    if (b.getDiscount()       > 0) { totRow(cs, reg,  tx, tw, y, "Discount:",        "-" + fv(b.getDiscount())); y -= 12; }
-                    totRow(cs, reg,  tx, tw, y, "Taxable Amount:",    fv(b.getTaxableAmount())); y -= 12;
-                    if (b.getCgstRate() > 0) { totRow(cs, reg, tx, tw, y, "CGST " + fp(b.getCgstRate()) + "%:", fv(b.getCgstAmount())); y -= 12; }
-                    if (b.getSgstRate() > 0) { totRow(cs, reg, tx, tw, y, "SGST " + fp(b.getSgstRate()) + "%:", fv(b.getSgstAmount())); y -= 12; }
-                    if (b.getIgstRate() > 0) { totRow(cs, reg, tx, tw, y, "IGST " + fp(b.getIgstRate()) + "%:", fv(b.getIgstAmount())); y -= 12; }
-                    hline(cs, y, tx, tw, 0.7f, DARK); y -= 4;
-                    totRow(cs, bold, tx, tw, y, "GRAND TOTAL:", "Rs. " + fv(b.getGrandTotal())); y -= 14;
-                    if (b.getAdvanceAmount() > 0) { totRow(cs, reg, tx, tw, y, "Advance Paid:", fv(b.getAdvanceAmount())); y -= 12; }
-                    totRow(cs, bold, tx, tw, y, "Balance Due:", "Rs. " + fv(b.getBalanceDue())); y -= 16;
+                    if (b.getLabourTotal()    > 0) { totRow(cs, reg,  tx, tw, y, "Labour Total:",     fv(b.getLabourTotal()));    y -= 18; }
+                    if (b.getPartsTotal()     > 0) { totRow(cs, reg,  tx, tw, y, "Parts Total:",      fv(b.getPartsTotal()));     y -= 18; }
+                    if (b.getAncillaryTotal() > 0) { totRow(cs, reg,  tx, tw, y, "Ancillary Total:",  fv(b.getAncillaryTotal())); y -= 18; }
+                    if (b.getDiscount()       > 0) { totRow(cs, reg,  tx, tw, y, "Discount:",        "-" + fv(b.getDiscount())); y -= 18; }
+                    totRow(cs, reg,  tx, tw, y, "Taxable Amount:", fv(b.getTaxableAmount())); y -= 18;
+                    if (b.getCgstRate() > 0) { totRow(cs, reg, tx, tw, y, "CGST " + fp(b.getCgstRate()) + "%:", fv(b.getCgstAmount())); y -= 18; }
+                    if (b.getSgstRate() > 0) { totRow(cs, reg, tx, tw, y, "SGST " + fp(b.getSgstRate()) + "%:", fv(b.getSgstAmount())); y -= 18; }
+                    if (b.getIgstRate() > 0) { totRow(cs, reg, tx, tw, y, "IGST " + fp(b.getIgstRate()) + "%:", fv(b.getIgstAmount())); y -= 18; }
+                    y -= 4;
+                    hline(cs, y, tx, tw, 0.8f, DARK); y -= 10;
+                    totRow(cs, bold, tx, tw, y, "GRAND TOTAL:", "Rs. " + fv(b.getGrandTotal())); y -= 20;
+                    if (b.getAdvanceAmount() > 0) { totRow(cs, reg, tx, tw, y, "Advance Paid:", fv(b.getAdvanceAmount())); y -= 18; }
+                    totRow(cs, bold, tx, tw, y, "Balance Due:", "Rs. " + fv(b.getBalanceDue())); y -= 22;
                 }
 
                 // ── Footer ────────────────────────────────────────────────────
-                hline(cs, M + 14, M, CW, 0.4f, LGRAY);
-                text(cs, reg, 7, "Computer generated. Job Card: " + jc.getJobCardNumber(), M, M + 6, MUTED);
-                text(cs, bold, 7, "Authorized Signatory", M + CW - 90, M + 6, DARK);
+                hline(cs, M + 18, M, CW, 0.4f, LGRAY);
+                text(cs, reg, 7, "Computer generated. Job Card: " + jc.getJobCardNumber(), M, M + 8, MUTED);
+                text(cs, bold, 7, "Authorized Signatory", M + CW - 90, M + 8, DARK);
             }
 
             ByteArrayOutputStream out = new ByteArrayOutputStream();
@@ -177,12 +181,13 @@ public class JobCardPdfGenerator {
         float x = M;
         for (int i = 0; i < headers.length; i++) {
             boolean ra = contains(rightAlignCols, i);
-            if (ra) textRC(cs, bold, 7, headers[i], x, cols[i] - 3, y - THDR + 5, DARK);
-            else    textC(cs, bold, 7, headers[i], x + 2, y - THDR + 5, cols[i] - 4, DARK);
+            float textY = y - THDR + VPAD;
+            if (ra) textRC(cs, bold, 8f, headers[i], x, cols[i], textY, DARK);
+            else    textC(cs,  bold, 8f, headers[i], x + HPAD, textY, cols[i] - HPAD * 2, DARK);
             x += cols[i];
         }
         y -= THDR;
-        hline(cs, y, M, sum(cols), 0.5f, new Color(140, 140, 140));
+        hline(cs, y, M, sum(cols), 0.6f, new Color(140, 140, 140));
 
         boolean alt = false;
         for (String[] row : rows) {
@@ -190,16 +195,16 @@ public class JobCardPdfGenerator {
             alt = !alt;
             x = M;
             for (int i = 0; i < row.length && i < cols.length; i++) {
-                float base = y - ROW + 4;
+                float textY = y - ROW + VPAD;
                 boolean ra = contains(rightAlignCols, i);
-                if (ra) textRC(cs, reg, 7, row[i], x, cols[i] - 3, base, DARK);
-                else    textC(cs, reg, 7, row[i], x + 2, base, cols[i] - 4, DARK);
+                if (ra) textRC(cs, reg, 8f, row[i], x, cols[i], textY, DARK);
+                else    textC(cs,  reg, 8f, row[i], x + HPAD, textY, cols[i] - HPAD * 2, DARK);
                 x += cols[i];
             }
             y -= ROW;
-            hline(cs, y, M, sum(cols), 0.2f, new Color(210, 210, 210));
+            hline(cs, y, M, sum(cols), 0.3f, new Color(200, 200, 200));
         }
-        hline(cs, y, M, sum(cols), 0.6f, new Color(100, 100, 100));
+        hline(cs, y, M, sum(cols), 0.7f, new Color(100, 100, 100));
         return y;
     }
 
@@ -230,9 +235,10 @@ public class JobCardPdfGenerator {
             String t, float colX, float colW, float y, Color c) throws IOException {
         if (t == null || t.isBlank()) return;
         String s = safe(t);
-        while (s.length() > 1 && f.getStringWidth(s) / 1000f * sz > colW - 4) s = s.substring(0, s.length() - 1);
+        float maxW = colW - HPAD * 2;
+        while (s.length() > 1 && f.getStringWidth(s) / 1000f * sz > maxW) s = s.substring(0, s.length() - 1);
         float w = f.getStringWidth(s) / 1000f * sz;
-        text(cs, f, sz, s, colX + colW - 2 - w, y, c);
+        text(cs, f, sz, s, colX + colW - HPAD - w, y, c);
     }
 
     private static void textRight(PDPageContentStream cs, PDType1Font f, float sz,
@@ -252,23 +258,23 @@ public class JobCardPdfGenerator {
 
     private static float kv(PDPageContentStream cs, PDType1Font bold, PDType1Font reg,
             float x, float y, String key, String val) throws IOException {
-        text(cs, bold, 7, key, x, y, MUTED);
-        float kw = bold.getStringWidth(safe(key) + " ") / 1000f * 7;
-        text(cs, reg, 8, val, x + kw, y, DARK);
-        return y - 11;
+        text(cs, bold, 9, key, x, y, MUTED);
+        float kw = bold.getStringWidth(safe(key) + " ") / 1000f * 9;
+        text(cs, reg, 9, val, x + kw, y, DARK);
+        return y - 15;
     }
 
     private static void inlineKv(PDPageContentStream cs, PDType1Font bold, PDType1Font reg,
             float x, float y, String key, String val, float maxW) throws IOException {
-        text(cs, bold, 7, key, x, y, MUTED);
-        float kw = bold.getStringWidth(safe(key) + " ") / 1000f * 7;
-        textC(cs, reg, 8, val, x + kw, y, maxW - kw, DARK);
+        text(cs, bold, 9, key, x, y, MUTED);
+        float kw = bold.getStringWidth(safe(key) + " ") / 1000f * 9;
+        textC(cs, reg, 9, val, x + kw, y, maxW - kw, DARK);
     }
 
     private static void totRow(PDPageContentStream cs, PDType1Font f,
             float x, float w, float y, String label, String val) throws IOException {
-        text(cs, f, 8, label, x + 4, y, DARK);
-        textRight(cs, f, 8, val, x + w - 4, y, DARK);
+        text(cs, f, 9, label, x + 6, y, DARK);
+        textRight(cs, f, 9, val, x + w - 6, y, DARK);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

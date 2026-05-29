@@ -8,6 +8,7 @@ import lombok.Setter;
 public class LabourItemRequest {
     private String description;
     private String type = "LABOUR";
+    private Long   technicianId;
     private int    quantity = 1;
     private double rate;
 }

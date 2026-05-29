@@ -10,6 +10,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDate;
 import java.util.List;
 
 @RestController
@@ -20,8 +21,15 @@ public class InvoiceController {
     private final InvoiceService invoiceService;
 
     @GetMapping
-    public List<InvoiceDetailResponse> getAll() {
-        return invoiceService.getAll();
+    public List<InvoiceDetailResponse> getAll(
+            @RequestHeader(value = "X-User-Id", defaultValue = "0") Long userId,
+            @RequestHeader(value = "X-User-Role", defaultValue = "") String userRole,
+            @RequestParam(required = false) String from,
+            @RequestParam(required = false) String to) {
+        Long dealerId = "ADMIN".equals(userRole) ? null : userId;
+        LocalDate fromDate = from != null ? LocalDate.parse(from) : null;
+        LocalDate toDate   = to   != null ? LocalDate.parse(to)   : null;
+        return invoiceService.getAll(dealerId, fromDate, toDate);
     }
 
     @PostMapping("/upload")

@@ -22,4 +22,7 @@ public class AuditSummaryResponse {
     private final long   invoicesPreviousMonth;
     private final long   totalInvoices;
     private final double averageInvoiceValue;
+    private final double totalSalaryPaid;
+    private final double salaryPaidThisMonth;
+    private final double netProfitThisMonth;
 }

@@ -113,17 +113,21 @@ public class JobCardDetailResponse {
         private final Long id;
         private final String description;
         private final String type;
+        private final Long technicianId;
+        private final String technicianName;
         private final int quantity;
         private final double rate;
         private final double amount;
 
         public LabourItemInfo(JobCardLabour l) {
-            this.id          = l.getId();
-            this.description = l.getDescription();
-            this.type        = l.getType();
-            this.quantity    = l.getQuantity();
-            this.rate        = l.getRate();
-            this.amount      = l.getAmount();
+            this.id              = l.getId();
+            this.description     = l.getDescription();
+            this.type            = l.getType();
+            this.technicianId    = l.getTechnician() != null ? l.getTechnician().getId() : null;
+            this.technicianName  = l.getTechnician() != null ? l.getTechnician().getName() : null;
+            this.quantity        = l.getQuantity();
+            this.rate            = l.getRate();
+            this.amount          = l.getAmount();
         }
     }
 
