@@ -67,9 +67,12 @@ public class JobCardController {
             @PathVariable Long id,
             @RequestParam String status,
             @RequestHeader(value = "X-User-Id",   defaultValue = "0")    Long userId,
-            @RequestHeader(value = "X-User-Role", defaultValue = "")     String userRole
+            @RequestHeader(value = "X-User-Role", defaultValue = "")     String userRole,
+            @RequestHeader(value = "X-Dealer-Id", required = false)      Long dealerIdHeader
     ) {
-        Long dealerFilter = "ADMIN".equals(userRole) ? null : userId;
+        Long dealerFilter = "ADMIN".equals(userRole) ? null
+                : "TECHNICIAN".equals(userRole) && dealerIdHeader != null ? dealerIdHeader
+                : userId;
         return ResponseEntity.ok(jobCardService.updateStatus(id, status, dealerFilter));
     }
 
@@ -114,19 +117,25 @@ public class JobCardController {
             @PathVariable Long id,
             @RequestBody LabourItemRequest req,
             @RequestHeader(value = "X-User-Id",   defaultValue = "0") Long userId,
-            @RequestHeader(value = "X-User-Role", defaultValue = "")  String userRole
+            @RequestHeader(value = "X-User-Role", defaultValue = "")  String userRole,
+            @RequestHeader(value = "X-Dealer-Id", required = false)   Long dealerIdHeader
     ) {
-        return ResponseEntity.ok(jobCardService.addLabour(id, req, "ADMIN".equals(userRole) ? null : userId));
+        Long dealerFilter = "ADMIN".equals(userRole) ? null
+                : "TECHNICIAN".equals(userRole) && dealerIdHeader != null ? dealerIdHeader
+                : userId;
+        return ResponseEntity.ok(jobCardService.addLabour(id, req, dealerFilter));
     }
 
     @DeleteMapping("/{id}/labour/{labourId}")
     public ResponseEntity<JobCardDetailResponse> deleteLabour(
             @PathVariable Long id, @PathVariable Long labourId,
             @RequestHeader(value = "X-User-Id",   defaultValue = "0") Long userId,
-            @RequestHeader(value = "X-User-Role", defaultValue = "")  String userRole
+            @RequestHeader(value = "X-User-Role", defaultValue = "")  String userRole,
+            @RequestHeader(value = "X-Dealer-Id", required = false)   Long dealerIdHeader
     ) {
         if ("TECHNICIAN".equals(userRole)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
-        return ResponseEntity.ok(jobCardService.deleteLabour(id, labourId, "ADMIN".equals(userRole) ? null : userId));
+        Long dealerFilter = "ADMIN".equals(userRole) ? null : userId;
+        return ResponseEntity.ok(jobCardService.deleteLabour(id, labourId, dealerFilter));
     }
 
     // ── Parts CRUD ────────────────────────────────────────────────────────────
@@ -136,19 +145,25 @@ public class JobCardController {
             @PathVariable Long id,
             @RequestBody PartItemRequest req,
             @RequestHeader(value = "X-User-Id",   defaultValue = "0") Long userId,
-            @RequestHeader(value = "X-User-Role", defaultValue = "")  String userRole
+            @RequestHeader(value = "X-User-Role", defaultValue = "")  String userRole,
+            @RequestHeader(value = "X-Dealer-Id", required = false)   Long dealerIdHeader
     ) {
-        return ResponseEntity.ok(jobCardService.addPart(id, req, "ADMIN".equals(userRole) ? null : userId));
+        Long dealerFilter = "ADMIN".equals(userRole) ? null
+                : "TECHNICIAN".equals(userRole) && dealerIdHeader != null ? dealerIdHeader
+                : userId;
+        return ResponseEntity.ok(jobCardService.addPart(id, req, dealerFilter));
     }
 
     @DeleteMapping("/{id}/parts/{partId}")
     public ResponseEntity<JobCardDetailResponse> deletePart(
             @PathVariable Long id, @PathVariable Long partId,
             @RequestHeader(value = "X-User-Id",   defaultValue = "0") Long userId,
-            @RequestHeader(value = "X-User-Role", defaultValue = "")  String userRole
+            @RequestHeader(value = "X-User-Role", defaultValue = "")  String userRole,
+            @RequestHeader(value = "X-Dealer-Id", required = false)   Long dealerIdHeader
     ) {
         if ("TECHNICIAN".equals(userRole)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
-        return ResponseEntity.ok(jobCardService.deletePart(id, partId, "ADMIN".equals(userRole) ? null : userId));
+        Long dealerFilter = "ADMIN".equals(userRole) ? null : userId;
+        return ResponseEntity.ok(jobCardService.deletePart(id, partId, dealerFilter));
     }
 
     // ── Ancillary CRUD ────────────────────────────────────────────────────────
@@ -158,18 +173,24 @@ public class JobCardController {
             @PathVariable Long id,
             @RequestBody AncillaryItemRequest req,
             @RequestHeader(value = "X-User-Id",   defaultValue = "0") Long userId,
-            @RequestHeader(value = "X-User-Role", defaultValue = "")  String userRole
+            @RequestHeader(value = "X-User-Role", defaultValue = "")  String userRole,
+            @RequestHeader(value = "X-Dealer-Id", required = false)   Long dealerIdHeader
     ) {
-        return ResponseEntity.ok(jobCardService.addAncillary(id, req, "ADMIN".equals(userRole) ? null : userId));
+        Long dealerFilter = "ADMIN".equals(userRole) ? null
+                : "TECHNICIAN".equals(userRole) && dealerIdHeader != null ? dealerIdHeader
+                : userId;
+        return ResponseEntity.ok(jobCardService.addAncillary(id, req, dealerFilter));
     }
 
     @DeleteMapping("/{id}/ancillary/{ancId}")
     public ResponseEntity<JobCardDetailResponse> deleteAncillary(
             @PathVariable Long id, @PathVariable Long ancId,
             @RequestHeader(value = "X-User-Id",   defaultValue = "0") Long userId,
-            @RequestHeader(value = "X-User-Role", defaultValue = "")  String userRole
+            @RequestHeader(value = "X-User-Role", defaultValue = "")  String userRole,
+            @RequestHeader(value = "X-Dealer-Id", required = false)   Long dealerIdHeader
     ) {
         if ("TECHNICIAN".equals(userRole)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
-        return ResponseEntity.ok(jobCardService.deleteAncillary(id, ancId, "ADMIN".equals(userRole) ? null : userId));
+        Long dealerFilter = "ADMIN".equals(userRole) ? null : userId;
+        return ResponseEntity.ok(jobCardService.deleteAncillary(id, ancId, dealerFilter));
     }
 }
