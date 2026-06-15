@@ -24,7 +24,7 @@ public class TechnicianController {
     private final DealerTechnicianAssignmentRepository assignmentRepository;
 
     record TechnicianResponse(
-            Long id, String name, String phone, String employeeCode,
+            Long id, Long userId, String name, String phone, String employeeCode,
             String panNumber, String aadhaarNumber,
             String specialisation, boolean active, Long dealerId,
             String joinedDate, String leftDate
@@ -33,13 +33,14 @@ public class TechnicianController {
     record TechnicianRequest(
             String name, String phone, String employeeCode,
             String specialisation, Long dealerId,
-            String panNumber, String aadhaarNumber
+            String panNumber, String aadhaarNumber,
+            Long userId
     ) {}
 
     private TechnicianResponse toResponse(DealerTechnicianAssignment a) {
         Technician t = a.getTechnician();
         return new TechnicianResponse(
-                t.getId(), t.getName(), t.getPhone(), t.getEmployeeCode(),
+                t.getId(), t.getUserId(), t.getName(), t.getPhone(), t.getEmployeeCode(),
                 t.getPanNumber(), t.getAadhaarNumber(),
                 a.getSpecialisation(), a.isActive(), a.getDealerId(),
                 a.getJoinedDate() != null ? a.getJoinedDate().toString() : null,
@@ -126,15 +127,16 @@ public class TechnicianController {
         t.setEmployeeCode(req.employeeCode());
         if (pan  != null) t.setPanNumber(pan);
         if (aadh != null) t.setAadhaarNumber(aadh);
+        if (req.userId() != null) t.setUserId(req.userId());
         return technicianRepository.save(t);
     }
 
     private Technician syncContactDetails(Technician t, TechnicianRequest req) {
         t.setPhone(req.phone());
         t.setEmployeeCode(req.employeeCode());
-        // fill in missing IDs if newly provided
         if (hasPan(req)  && t.getPanNumber()     == null) t.setPanNumber(req.panNumber().toUpperCase().trim());
         if (hasAadh(req) && t.getAadhaarNumber() == null) t.setAadhaarNumber(req.aadhaarNumber().trim());
+        if (req.userId() != null) t.setUserId(req.userId());
         return technicianRepository.save(t);
     }
 
@@ -154,6 +156,7 @@ public class TechnicianController {
         t.setEmployeeCode(req.employeeCode());
         if (hasPan(req))  t.setPanNumber(req.panNumber().toUpperCase().trim());
         if (hasAadh(req)) t.setAadhaarNumber(req.aadhaarNumber().trim());
+        if (req.userId() != null) t.setUserId(req.userId());
         technicianRepository.save(t);
 
         DealerTechnicianAssignment a = assignmentRepository.findActiveByTechnicianId(id)

@@ -37,6 +37,10 @@ public interface JobCardRepository extends JpaRepository<JobCard, Long> {
                                              @Param("to") LocalDate to);
 
 
+    @Query("SELECT DISTINCT jc FROM JobCard jc LEFT JOIN FETCH jc.customer LEFT JOIN FETCH jc.vehicle " +
+           "JOIN jc.labourItems l JOIN l.technician t WHERE t.userId = :userId ORDER BY jc.createdAt DESC")
+    List<JobCard> findByTechnicianUserId(@Param("userId") Long userId);
+
     @Query("SELECT jc FROM JobCard jc LEFT JOIN FETCH jc.customer LEFT JOIN FETCH jc.vehicle " +
            "WHERE jc.vehicle.id = :vehicleId ORDER BY jc.dateIn DESC")
     List<JobCard> findByVehicleId(@Param("vehicleId") Long vehicleId);

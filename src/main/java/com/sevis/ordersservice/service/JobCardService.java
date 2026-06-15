@@ -54,7 +54,17 @@ public class JobCardService {
 
     @Transactional(readOnly = true)
     public List<JobCardSummaryResponse> getAll(Long dealerId, LocalDate from, LocalDate to) {
+        return getAll(dealerId, from, to, null);
+    }
+
+    @Transactional(readOnly = true)
+    public List<JobCardSummaryResponse> getAll(Long dealerId, LocalDate from, LocalDate to, Long technicianUserId) {
         List<JobCard> cards;
+        // TECHNICIAN role: filter to only job cards they have tasks on
+        if (technicianUserId != null) {
+            cards = jobCardRepository.findByTechnicianUserId(technicianUserId);
+            return cards.stream().map(JobCardSummaryResponse::new).collect(Collectors.toList());
+        }
         boolean hasDateFilter = from != null || to != null;
         if (hasDateFilter) {
             cards = (dealerId != null)
@@ -262,6 +272,15 @@ public class JobCardService {
         if (dealerId != null && !jc.getDealerId().equals(dealerId)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied");
         }
+        if ("CLOSED".equals(newStatus)) {
+            jc.getLabourItems().size(); // init lazy collection
+            boolean hasPending = jc.getLabourItems().stream()
+                    .anyMatch(l -> l.getTechnician() != null && "PENDING".equals(l.getTaskStatus()));
+            if (hasPending) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Cannot close job card: some technician tasks are still pending");
+            }
+        }
         if ("DELIVERED".equals(newStatus) || "CLOSED".equals(newStatus)) {
             jc.setDateOut(LocalDate.now());
         }
@@ -360,6 +379,39 @@ public class JobCardService {
         JobCardDetailResponse saved = new JobCardDetailResponse(jobCardRepository.save(jc));
         invoiceService.updateInvoiceIfExists(id, jc.getDealerId());
         return saved;
+    }
+
+    // ── Update task status (technician marks their work done/pending) ──────────
+
+    @Transactional
+    public JobCardDetailResponse updateLabourStatus(Long id, Long labourId, String taskStatus, Long callerUserId) {
+        String normalised = taskStatus.toUpperCase();
+        if (!"PENDING".equals(normalised) && !"DONE".equals(normalised)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "taskStatus must be PENDING or DONE");
+        }
+        JobCard jc = jobCardRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Job card not found"));
+        jc.getLabourItems().size();
+
+        JobCardLabour labour = jc.getLabourItems().stream()
+                .filter(l -> l.getId().equals(labourId))
+                .findFirst()
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Labour item not found"));
+
+        // Technicians may only update tasks assigned to them
+        if (callerUserId != null && labour.getTechnician() != null) {
+            Long techUserId = labour.getTechnician().getUserId();
+            if (techUserId != null && !techUserId.equals(callerUserId)) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                        "You can only update tasks assigned to you");
+            }
+        }
+
+        labour.setTaskStatus(normalised);
+        jc.getParts().size();
+        jc.getAncillaryItems().size();
+        return new JobCardDetailResponse(jobCardRepository.save(jc));
     }
 
     // ── Add / delete parts ────────────────────────────────────────────────────

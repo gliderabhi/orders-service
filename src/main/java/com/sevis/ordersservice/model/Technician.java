@@ -14,6 +14,9 @@ public class Technician {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    // Links to the user-service user account for this technician's login
+    private Long userId;
+
     @Column(nullable = false)
     private String name;
 

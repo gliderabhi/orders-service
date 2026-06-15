@@ -36,12 +36,14 @@ public class JobCardController {
             @RequestParam(required = false) String from,
             @RequestParam(required = false) String to
     ) {
-        Long dealerFilter = "ADMIN".equals(userRole) ? null
-                : "TECHNICIAN".equals(userRole) && dealerIdHeader != null ? dealerIdHeader
-                : userId;
         java.time.LocalDate fromDate = (from != null && !from.isBlank()) ? java.time.LocalDate.parse(from) : null;
         java.time.LocalDate toDate   = (to   != null && !to.isBlank())   ? java.time.LocalDate.parse(to)   : null;
-        return jobCardService.getAll(dealerFilter, fromDate, toDate);
+        if ("TECHNICIAN".equals(userRole)) {
+            // Show only job cards that have at least one task assigned to this technician
+            return jobCardService.getAll(null, fromDate, toDate, userId);
+        }
+        Long dealerFilter = "ADMIN".equals(userRole) ? null : userId;
+        return jobCardService.getAll(dealerFilter, fromDate, toDate, null);
     }
 
     @GetMapping("/{id}")
@@ -124,6 +126,20 @@ public class JobCardController {
                 : "TECHNICIAN".equals(userRole) && dealerIdHeader != null ? dealerIdHeader
                 : userId;
         return ResponseEntity.ok(jobCardService.addLabour(id, req, dealerFilter));
+    }
+
+    @PatchMapping("/{id}/labour/{labourId}/status")
+    public ResponseEntity<JobCardDetailResponse> updateLabourStatus(
+            @PathVariable Long id,
+            @PathVariable Long labourId,
+            @RequestParam String taskStatus,
+            @RequestHeader(value = "X-User-Id",   defaultValue = "0") Long userId,
+            @RequestHeader(value = "X-User-Role", defaultValue = "")  String userRole
+    ) {
+        // TECHNICIAN: pass userId so service can verify the task belongs to them
+        // DEALER/ADMIN: pass null to skip ownership check
+        Long callerUserId = "TECHNICIAN".equals(userRole) ? userId : null;
+        return ResponseEntity.ok(jobCardService.updateLabourStatus(id, labourId, taskStatus, callerUserId));
     }
 
     @DeleteMapping("/{id}/labour/{labourId}")
