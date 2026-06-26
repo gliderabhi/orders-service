@@ -78,7 +78,8 @@ public class TechnicianController {
     @PostMapping
     public ResponseEntity<TechnicianResponse> create(
             @RequestBody TechnicianRequest req,
-            @RequestHeader(value = "X-User-Role", defaultValue = "") String userRole) {
+            @RequestHeader(value = "X-User-Role", defaultValue = "") String userRole,
+            @RequestHeader(value = "X-User-Id", defaultValue = "0") Long callerId) {
         if ("TECHNICIAN".equals(userRole)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         Technician t = resolveOrCreate(req);
 
@@ -88,10 +89,12 @@ public class TechnicianController {
             assignmentRepository.save(existing);
         });
 
+        Long dealerId = req.dealerId() != null ? req.dealerId() : ("ADMIN".equals(userRole) ? null : callerId);
+
         DealerTechnicianAssignment a = new DealerTechnicianAssignment();
         a.setTechnician(t);
         a.setSpecialisation(req.specialisation());
-        a.setDealerId(req.dealerId());
+        a.setDealerId(dealerId);
         a.setActive(true);
         a.setJoinedDate(LocalDate.now());
         assignmentRepository.save(a);
