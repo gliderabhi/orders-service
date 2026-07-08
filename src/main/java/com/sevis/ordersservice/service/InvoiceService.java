@@ -168,6 +168,10 @@ public class InvoiceService {
         // 6. Deduct stock for parts with qty > 0
         deductStock(dealerId, parsed.lineItems());
 
+        // 7. Award loyalty points for this transaction
+        if (customer != null && parsed.grandTotal() > 0)
+            awardLoyaltyPoints(customer, parsed.grandTotal());
+
         return new InvoiceDetailResponse(saved);
     }
 
@@ -371,6 +375,11 @@ public class InvoiceService {
 
         Invoice saved = invoiceRepository.save(invoice);
         saved.getLineItems().size(); // ensure loaded for response
+
+        // Award loyalty points (only on new invoices to avoid double-awarding)
+        if (isNew && jc.getCustomer() != null && saved.getGrandTotal() != null && saved.getGrandTotal() > 0)
+            awardLoyaltyPoints(jc.getCustomer(), saved.getGrandTotal());
+
         return new InvoiceDetailResponse(saved);
     }
 
@@ -420,6 +429,30 @@ public class InvoiceService {
         if (p.customerState() != null) { if (sb.length() > 0) sb.append(", "); sb.append(p.customerState()); }
         if (p.customerPinCode() != null) { if (sb.length() > 0) sb.append(" - "); sb.append(p.customerPinCode()); }
         return sb.length() > 0 ? sb.toString() : null;
+    }
+
+    // ── Loyalty points ────────────────────────────────────────────────────────
+
+    private void awardLoyaltyPoints(Customer customer, double grandTotal) {
+        // Ensure member number exists
+        if (customer.getLoyaltyMemberNumber() == null) {
+            customer.setLoyaltyMemberNumber(String.format("MBR-%06d", customer.getId()));
+        }
+        // 1 point per ₹10 spent, rounded down
+        int earned = (int) (grandTotal / 10);
+        int newBalance = (customer.getLoyaltyPoints() == null ? 0 : customer.getLoyaltyPoints()) + earned;
+        customer.setLoyaltyPoints(newBalance);
+        customer.setLoyaltyTier(computeTier(newBalance));
+        customerRepository.save(customer);
+        log.info("Loyalty: customer {} earned {} pts (total: {}, tier: {})",
+                customer.getId(), earned, newBalance, customer.getLoyaltyTier());
+    }
+
+    private static String computeTier(int points) {
+        if (points >= 10000) return "PLATINUM";
+        if (points >= 5000)  return "GOLD";
+        if (points >= 1000)  return "SILVER";
+        return "MEMBER";
     }
 
     private void deductStock(Long dealerId, List<InvoicePdfParser.LineItem> lineItems) {

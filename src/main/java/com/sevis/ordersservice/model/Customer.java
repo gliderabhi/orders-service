@@ -27,6 +27,11 @@ public class Customer {
     @Column(length = 500)
     private String address;
 
+    // ── Loyalty ───────────────────────────────────────────────────────────────
+    private String loyaltyMemberNumber;    // e.g. MBR-000042
+    private Integer loyaltyPoints = 0;     // cumulative point balance
+    private String loyaltyTier = "MEMBER"; // MEMBER / SILVER / GOLD / PLATINUM
+
     private LocalDateTime createdAt;
 
     @PrePersist
