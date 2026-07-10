@@ -5,11 +5,18 @@ import com.sevis.ordersservice.repository.InvoiceRepository;
 import com.sevis.ordersservice.repository.JobCardRepository;
 import com.sevis.ordersservice.repository.TechnicianSalaryRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 
+// This is a rollup/reporting dashboard aggregating counts and sums across
+// job cards, invoices and salaries touched by many write paths scattered
+// across several service classes — precisely evicting it on every one of
+// those writes isn't worth the coupling. A short TTL (30s, see CacheConfig)
+// is an acceptable backstop here since this is a dashboard summary, not a
+// single order/job card's live status field a customer is watching.
 @Service
 @RequiredArgsConstructor
 public class AuditService {
@@ -22,6 +29,7 @@ public class AuditService {
         return scoped ? jobCardRepository.countByStatusAndDealerId(status, dealerId) : jobCardRepository.countByStatus(status);
     }
 
+    @Cacheable(value = "auditSummary", key = "#dealerId", sync = true)
     @Transactional(readOnly = true)
     public AuditSummaryResponse getSummary(Long dealerId) {
         boolean scoped = dealerId != null;

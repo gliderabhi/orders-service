@@ -13,6 +13,9 @@ import com.sevis.ordersservice.repository.TechnicianRepository;
 import com.sevis.ordersservice.repository.VehicleRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -30,6 +33,10 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
+// Job card status (and the billing totals attached to it) is a live field
+// dealers/customers/technicians expect to see update immediately, so both
+// jobCardById and jobCardList carry only a short (20s) TTL — see CacheConfig
+// — and every write path below evicts explicitly rather than waiting on it.
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -52,11 +59,16 @@ public class JobCardService {
 
     // ── List ──────────────────────────────────────────────────────────────────
 
+    // Not cached: this overload is only ever called internally (self-invocation
+    // would bypass the Spring cache proxy anyway) — it just delegates to the
+    // cached 4-arg overload below.
     @Transactional(readOnly = true)
     public List<JobCardSummaryResponse> getAll(Long dealerId, LocalDate from, LocalDate to) {
         return getAll(dealerId, from, to, null);
     }
 
+    @Cacheable(value = "jobCardList",
+            key = "#dealerId + '-' + #from + '-' + #to + '-' + #technicianUserId", sync = true)
     @Transactional(readOnly = true)
     public List<JobCardSummaryResponse> getAll(Long dealerId, LocalDate from, LocalDate to, Long technicianUserId) {
         List<JobCard> cards;
@@ -80,6 +92,7 @@ public class JobCardService {
 
     // ── Detail ────────────────────────────────────────────────────────────────
 
+    @Cacheable(value = "jobCardById", key = "#id", sync = true)
     @Transactional(readOnly = true)
     public JobCardDetailResponse getById(Long id) {
         JobCard jc = jobCardRepository.findById(id)
@@ -98,6 +111,7 @@ public class JobCardService {
 
     // ── Create ────────────────────────────────────────────────────────────────
 
+    @CacheEvict(value = "jobCardList", allEntries = true)
     @Transactional
     public JobCardDetailResponse create(CreateJobCardRequest req, Long dealerId) {
 
@@ -260,6 +274,10 @@ public class JobCardService {
 
     // ── Status update ─────────────────────────────────────────────────────────
 
+    @Caching(evict = {
+            @CacheEvict(value = "jobCardById", key = "#id"),
+            @CacheEvict(value = "jobCardList", allEntries = true)
+    })
     @Transactional
     public JobCardDetailResponse updateStatus(Long id, String status, Long dealerId) {
         String newStatus = status.toUpperCase();
@@ -290,6 +308,10 @@ public class JobCardService {
 
     // ── Update payment ────────────────────────────────────────────────────────
 
+    @Caching(evict = {
+            @CacheEvict(value = "jobCardById", key = "#id"),
+            @CacheEvict(value = "jobCardList", allEntries = true)
+    })
     @Transactional
     public JobCardDetailResponse updatePayment(Long id, String paymentType, String paymentStatus, Long dealerId) {
         JobCard jc = jobCardRepository.findById(id)
@@ -351,6 +373,10 @@ public class JobCardService {
 
     // ── Add / delete labour items ─────────────────────────────────────────────
 
+    @Caching(evict = {
+            @CacheEvict(value = "jobCardById", key = "#id"),
+            @CacheEvict(value = "jobCardList", allEntries = true)
+    })
     @Transactional
     public JobCardDetailResponse addLabour(Long id, LabourItemRequest req, Long dealerId) {
         JobCard jc = getForUpdate(id, dealerId);
@@ -371,6 +397,10 @@ public class JobCardService {
         return saved;
     }
 
+    @Caching(evict = {
+            @CacheEvict(value = "jobCardById", key = "#id"),
+            @CacheEvict(value = "jobCardList", allEntries = true)
+    })
     @Transactional
     public JobCardDetailResponse deleteLabour(Long id, Long labourId, Long dealerId) {
         JobCard jc = getForUpdate(id, dealerId);
@@ -383,6 +413,10 @@ public class JobCardService {
 
     // ── Update task status (technician marks their work done/pending) ──────────
 
+    @Caching(evict = {
+            @CacheEvict(value = "jobCardById", key = "#id"),
+            @CacheEvict(value = "jobCardList", allEntries = true)
+    })
     @Transactional
     public JobCardDetailResponse updateLabourStatus(Long id, Long labourId, String taskStatus, Long callerUserId) {
         String normalised = taskStatus.toUpperCase();
@@ -416,6 +450,10 @@ public class JobCardService {
 
     // ── Add / delete parts ────────────────────────────────────────────────────
 
+    @Caching(evict = {
+            @CacheEvict(value = "jobCardById", key = "#id"),
+            @CacheEvict(value = "jobCardList", allEntries = true)
+    })
     @Transactional
     public JobCardDetailResponse addPart(Long id, PartItemRequest req, Long dealerId) {
         JobCard jc = getForUpdate(id, dealerId);
@@ -435,6 +473,10 @@ public class JobCardService {
         return saved;
     }
 
+    @Caching(evict = {
+            @CacheEvict(value = "jobCardById", key = "#id"),
+            @CacheEvict(value = "jobCardList", allEntries = true)
+    })
     @Transactional
     public JobCardDetailResponse deletePart(Long id, Long partId, Long dealerId) {
         JobCard jc = getForUpdate(id, dealerId);
@@ -449,6 +491,10 @@ public class JobCardService {
 
     // ── Add / delete ancillary items ──────────────────────────────────────────
 
+    @Caching(evict = {
+            @CacheEvict(value = "jobCardById", key = "#id"),
+            @CacheEvict(value = "jobCardList", allEntries = true)
+    })
     @Transactional
     public JobCardDetailResponse addAncillary(Long id, AncillaryItemRequest req, Long dealerId) {
         JobCard jc = getForUpdate(id, dealerId);
@@ -463,6 +509,10 @@ public class JobCardService {
         return saved;
     }
 
+    @Caching(evict = {
+            @CacheEvict(value = "jobCardById", key = "#id"),
+            @CacheEvict(value = "jobCardList", allEntries = true)
+    })
     @Transactional
     public JobCardDetailResponse deleteAncillary(Long id, Long ancId, Long dealerId) {
         JobCard jc = getForUpdate(id, dealerId);

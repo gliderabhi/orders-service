@@ -5,6 +5,8 @@ import com.sevis.ordersservice.model.Technician;
 import com.sevis.ordersservice.repository.DealerTechnicianAssignmentRepository;
 import com.sevis.ordersservice.repository.TechnicianRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -15,6 +17,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+// Technician roster (name/employee code/specialisation/active-assignment) is
+// slow-changing staff data, not a live customer-facing status field, so a
+// longer TTL (2min, see CacheConfig) is fine. Every write below evicts the
+// whole cache since these list reads are parameterized by role/dealer and
+// precise per-key eviction isn't worth the complexity here (correctness
+// over hit-rate, per policy).
 @RestController
 @RequestMapping("/api/technicians")
 @RequiredArgsConstructor
@@ -48,6 +56,7 @@ public class TechnicianController {
         );
     }
 
+    @Cacheable(value = "technicianList", key = "'all-' + #userId + '-' + #userRole", sync = true)
     @GetMapping
     public List<TechnicianResponse> getAll(
             @RequestHeader(value = "X-User-Id", defaultValue = "0") Long userId,
@@ -59,6 +68,7 @@ public class TechnicianController {
         return assignments.stream().map(this::toResponse).toList();
     }
 
+    @Cacheable(value = "technicianList", key = "'active-' + #userId + '-' + #userRole", sync = true)
     @GetMapping("/active")
     public List<TechnicianResponse> getActive(
             @RequestHeader(value = "X-User-Id", defaultValue = "0") Long userId,
@@ -75,6 +85,7 @@ public class TechnicianController {
      * Dedup logic: if name + PAN matches OR name + Aadhaar matches an existing
      * technician, reuse that record and open a new assignment instead of duplicating.
      */
+    @CacheEvict(value = "technicianList", allEntries = true)
     @PostMapping
     public ResponseEntity<TechnicianResponse> create(
             @RequestBody TechnicianRequest req,
@@ -146,6 +157,7 @@ public class TechnicianController {
     private boolean hasPan(TechnicianRequest req)  { return req.panNumber()     != null && !req.panNumber().isBlank(); }
     private boolean hasAadh(TechnicianRequest req) { return req.aadhaarNumber() != null && !req.aadhaarNumber().isBlank(); }
 
+    @CacheEvict(value = "technicianList", allEntries = true)
     @PutMapping("/{id}")
     public ResponseEntity<TechnicianResponse> update(
             @PathVariable Long id,
@@ -171,6 +183,7 @@ public class TechnicianController {
         return ResponseEntity.ok(toResponse(a));
     }
 
+    @CacheEvict(value = "technicianList", allEntries = true)
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deactivate(
             @PathVariable Long id,
@@ -184,6 +197,7 @@ public class TechnicianController {
         return ResponseEntity.noContent().build();
     }
 
+    @CacheEvict(value = "technicianList", allEntries = true)
     @PostMapping("/{id}/reassign")
     public ResponseEntity<TechnicianResponse> reassign(
             @PathVariable Long id,

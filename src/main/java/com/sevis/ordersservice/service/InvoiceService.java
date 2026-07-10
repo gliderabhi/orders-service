@@ -5,6 +5,11 @@ import com.sevis.ordersservice.model.*;
 import com.sevis.ordersservice.repository.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.http.*;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -30,6 +35,7 @@ public class InvoiceService {
     private final VehicleRepository     vehicleRepository;
     private final JobCardRepository     jobCardRepository;
     private final RestTemplate          restTemplate;
+    private final CacheManager          cacheManager;
 
     private static final String INVENTORY_DEDUCT_URL =
             "http://inventory-service/api/stock/deduct";
@@ -42,6 +48,10 @@ public class InvoiceService {
     }
 
     // ── Upload & process invoice PDF ──────────────────────────────────────────
+    @Caching(evict = {
+            @CacheEvict(value = "invoiceList", allEntries = true),
+            @CacheEvict(value = "invoicesByJobCard", allEntries = true)
+    })
     @Transactional
     public InvoiceDetailResponse uploadPdf(byte[] pdfBytes, Long dealerId) {
         if (!isPdf(pdfBytes)) {
@@ -176,6 +186,7 @@ public class InvoiceService {
     }
 
     // ── List all invoices ─────────────────────────────────────────────────────
+    @Cacheable(value = "invoiceList", key = "#dealerId + '-' + #from + '-' + #to", sync = true)
     @Transactional(readOnly = true)
     public List<InvoiceDetailResponse> getAll(Long dealerId, LocalDate from, LocalDate to) {
         boolean dated = (from != null || to != null);
@@ -190,12 +201,14 @@ public class InvoiceService {
     }
 
     // ── Fetch invoice by job card ─────────────────────────────────────────────
+    @Cacheable(value = "invoicesByJobCard", key = "#jobCardId", sync = true)
     @Transactional(readOnly = true)
     public List<InvoiceDetailResponse> getByJobCard(Long jobCardId) {
         return invoiceRepository.findByJobCardId(jobCardId)
                 .stream().map(InvoiceDetailResponse::new).toList();
     }
 
+    @Cacheable(value = "invoiceById", key = "#id", sync = true)
     @Transactional(readOnly = true)
     public InvoiceDetailResponse getById(Long id) {
         Invoice inv = invoiceRepository.findById(id)
@@ -226,6 +239,14 @@ public class InvoiceService {
 
     // ── Auto-update invoice if one already exists ─────────────────────────────
 
+    // Note: this calls generateOrUpdateInvoice via a plain internal ("this.")
+    // call, which bypasses the Spring cache proxy — so it carries its own
+    // eviction here rather than relying on the annotation on that method.
+    @Caching(evict = {
+            @CacheEvict(value = "invoiceById", allEntries = true),
+            @CacheEvict(value = "invoiceList", allEntries = true),
+            @CacheEvict(value = "invoicesByJobCard", key = "#jobCardId")
+    })
     @Transactional
     public void updateInvoiceIfExists(Long jobCardId, Long dealerId) {
         if (!invoiceRepository.findByJobCardId(jobCardId).isEmpty()) {
@@ -235,6 +256,11 @@ public class InvoiceService {
 
     // ── Generate / update invoice from job card ───────────────────────────────
 
+    @Caching(evict = {
+            @CacheEvict(value = "invoiceById", allEntries = true),
+            @CacheEvict(value = "invoiceList", allEntries = true),
+            @CacheEvict(value = "invoicesByJobCard", key = "#jobCardId")
+    })
     @Transactional
     public InvoiceDetailResponse generateOrUpdateInvoice(Long jobCardId, Long dealerId) {
         JobCard jc = jobCardRepository.findById(jobCardId)
@@ -446,6 +472,15 @@ public class InvoiceService {
         customerRepository.save(customer);
         log.info("Loyalty: customer {} earned {} pts (total: {}, tier: {})",
                 customer.getId(), earned, newBalance, customer.getLoyaltyTier());
+
+        // Loyalty points/tier live in LoyaltyController's own caches (a
+        // different class, so @CacheEvict here wouldn't reach them) — evict
+        // programmatically via CacheManager so a fresh balance shows up
+        // immediately rather than waiting on that cache's short TTL.
+        Cache byCustomer = cacheManager.getCache("loyaltyByCustomer");
+        if (byCustomer != null) byCustomer.evict(customer.getId());
+        Cache byPhone = cacheManager.getCache("loyaltyByPhone");
+        if (byPhone != null && customer.getPhone() != null) byPhone.evict(customer.getPhone());
     }
 
     private static String computeTier(int points) {

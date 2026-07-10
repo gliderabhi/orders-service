@@ -5,6 +5,9 @@ import com.sevis.ordersservice.model.TechnicianSalary;
 import com.sevis.ordersservice.repository.TechnicianRepository;
 import com.sevis.ordersservice.repository.TechnicianSalaryRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Caching;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -13,6 +16,10 @@ import org.springframework.web.server.ResponseStatusException;
 import java.time.LocalDate;
 import java.util.List;
 
+// Salary records are financial/payroll data, infrequently read and not a
+// live customer-facing status — a medium TTL (2min, see CacheConfig) is
+// fine. Both caches are list-shaped (by technician, by month/year) so every
+// write evicts allEntries on both rather than computing precise keys.
 @RestController
 @RequestMapping("/api/technician-salaries")
 @RequiredArgsConstructor
@@ -46,6 +53,7 @@ public class TechnicianSalaryController {
     }
 
     /** All salary records for a technician */
+    @Cacheable(value = "salaryByTechnician", key = "#technicianId", sync = true)
     @GetMapping("/technician/{technicianId}")
     public List<SalaryResponse> getByTechnician(@PathVariable Long technicianId) {
         return salaryRepository.findByTechnicianIdOrderByYearDescMonthDesc(technicianId)
@@ -53,6 +61,7 @@ public class TechnicianSalaryController {
     }
 
     /** All salary records for a given month/year (payroll view) */
+    @Cacheable(value = "salaryByMonthYear", key = "#month + '-' + #year", sync = true)
     @GetMapping
     public List<SalaryResponse> getByMonthYear(
             @RequestParam int month, @RequestParam int year) {
@@ -61,6 +70,10 @@ public class TechnicianSalaryController {
     }
 
     /** Create or update salary record for a technician+month */
+    @Caching(evict = {
+            @CacheEvict(value = "salaryByTechnician", allEntries = true),
+            @CacheEvict(value = "salaryByMonthYear", allEntries = true)
+    })
     @PostMapping
     public ResponseEntity<SalaryResponse> upsert(
             @RequestBody SalaryRequest req,
@@ -88,6 +101,10 @@ public class TechnicianSalaryController {
     }
 
     /** Mark salary as paid */
+    @Caching(evict = {
+            @CacheEvict(value = "salaryByTechnician", allEntries = true),
+            @CacheEvict(value = "salaryByMonthYear", allEntries = true)
+    })
     @PatchMapping("/{id}/pay")
     public ResponseEntity<SalaryResponse> markPaid(
             @PathVariable Long id,
@@ -101,6 +118,10 @@ public class TechnicianSalaryController {
         return ResponseEntity.ok(toResponse(s));
     }
 
+    @Caching(evict = {
+            @CacheEvict(value = "salaryByTechnician", allEntries = true),
+            @CacheEvict(value = "salaryByMonthYear", allEntries = true)
+    })
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(
             @PathVariable Long id,
