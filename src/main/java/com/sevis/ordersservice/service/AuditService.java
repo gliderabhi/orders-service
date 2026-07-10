@@ -29,7 +29,10 @@ public class AuditService {
         return scoped ? jobCardRepository.countByStatusAndDealerId(status, dealerId) : jobCardRepository.countByStatus(status);
     }
 
-    @Cacheable(value = "auditSummary", key = "#dealerId", sync = true)
+    // dealerId is null for the global/admin view — Spring's cache abstraction
+    // throws IllegalArgumentException on a literal null key, so it's mapped
+    // to a sentinel string instead of using #dealerId directly.
+    @Cacheable(value = "auditSummary", key = "#dealerId != null ? #dealerId : 'all'", sync = true)
     @Transactional(readOnly = true)
     public AuditSummaryResponse getSummary(Long dealerId) {
         boolean scoped = dealerId != null;
