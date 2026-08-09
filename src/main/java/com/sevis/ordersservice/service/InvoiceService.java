@@ -300,6 +300,10 @@ public class InvoiceService {
         invoice.setOriginalJobCardNumber(jc.getJobCardNumber());
         invoice.setJobCardDate(jc.getDateIn());
         invoice.setServiceType(jc.getServiceType());
+        // Job-card-generated invoices carry the mode the payment was actually recorded
+        // under (CASH/UPI/etc) — only the PDF-import path (above) gets this from the
+        // parsed document instead.
+        if (jc.getBilling() != null) invoice.setPaymentMethod(jc.getBilling().getPaymentType());
         if (jc.getVehicle() != null) {
             invoice.setVehicleRegNo(jc.getVehicle().getRegNumber());
             invoice.setChassisNo(jc.getVehicle().getChassisNo());

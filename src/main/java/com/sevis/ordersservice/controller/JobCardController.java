@@ -11,6 +11,7 @@ import com.sevis.ordersservice.service.InvoiceService;
 import com.sevis.ordersservice.service.JobCardService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import com.sevis.common.role.RoleTiers;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -38,7 +39,7 @@ public class JobCardController {
     ) {
         java.time.LocalDate fromDate = (from != null && !from.isBlank()) ? java.time.LocalDate.parse(from) : null;
         java.time.LocalDate toDate   = (to   != null && !to.isBlank())   ? java.time.LocalDate.parse(to)   : null;
-        if ("TECHNICIAN".equals(userRole)) {
+        if (RoleTiers.isStaff(userRole)) {
             // Show only job cards that have at least one task assigned to this technician
             return jobCardService.getAll(null, fromDate, toDate, userId);
         }
@@ -47,8 +48,14 @@ public class JobCardController {
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<JobCardDetailResponse> getById(@PathVariable Long id) {
-        return ResponseEntity.ok(jobCardService.getById(id));
+    public ResponseEntity<JobCardDetailResponse> getById(
+            @PathVariable Long id,
+            @RequestHeader(value = "X-User-Id",   defaultValue = "0") Long userId,
+            @RequestHeader(value = "X-User-Role", defaultValue = "")  String userRole
+    ) {
+        Long dealerId          = RoleTiers.isManagement(userRole) ? userId : null;
+        Long technicianUserId  = RoleTiers.isStaff(userRole) ? userId : null;
+        return ResponseEntity.ok(jobCardService.getById(id, dealerId, technicianUserId));
     }
 
     @PostMapping
@@ -57,7 +64,7 @@ public class JobCardController {
             @RequestHeader(value = "X-User-Id",   defaultValue = "0") Long dealerId,
             @RequestHeader(value = "X-User-Role", defaultValue = "")  String userRole
     ) {
-        if ("TECHNICIAN".equals(userRole)) {
+        if (RoleTiers.isStaff(userRole)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
         return ResponseEntity.status(HttpStatus.CREATED)
@@ -69,12 +76,12 @@ public class JobCardController {
             @PathVariable Long id,
             @RequestParam String status,
             @RequestHeader(value = "X-User-Id",   defaultValue = "0")    Long userId,
-            @RequestHeader(value = "X-User-Role", defaultValue = "")     String userRole,
-            @RequestHeader(value = "X-Dealer-Id", required = false)      Long dealerIdHeader
+            @RequestHeader(value = "X-User-Role", defaultValue = "")     String userRole
     ) {
-        Long dealerFilter = "ADMIN".equals(userRole) ? null
-                : "TECHNICIAN".equals(userRole) && dealerIdHeader != null ? dealerIdHeader
-                : userId;
+        if (RoleTiers.isStaff(userRole)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+        Long dealerFilter = "ADMIN".equals(userRole) ? null : userId;
         return ResponseEntity.ok(jobCardService.updateStatus(id, status, dealerFilter));
     }
 
@@ -123,7 +130,7 @@ public class JobCardController {
             @RequestHeader(value = "X-Dealer-Id", required = false)   Long dealerIdHeader
     ) {
         Long dealerFilter = "ADMIN".equals(userRole) ? null
-                : "TECHNICIAN".equals(userRole) && dealerIdHeader != null ? dealerIdHeader
+                : RoleTiers.isStaff(userRole) && dealerIdHeader != null ? dealerIdHeader
                 : userId;
         return ResponseEntity.ok(jobCardService.addLabour(id, req, dealerFilter));
     }
@@ -138,7 +145,7 @@ public class JobCardController {
     ) {
         // TECHNICIAN: pass userId so service can verify the task belongs to them
         // DEALER/ADMIN: pass null to skip ownership check
-        Long callerUserId = "TECHNICIAN".equals(userRole) ? userId : null;
+        Long callerUserId = RoleTiers.isStaff(userRole) ? userId : null;
         return ResponseEntity.ok(jobCardService.updateLabourStatus(id, labourId, taskStatus, callerUserId));
     }
 
@@ -149,25 +156,26 @@ public class JobCardController {
             @RequestHeader(value = "X-User-Role", defaultValue = "")  String userRole,
             @RequestHeader(value = "X-Dealer-Id", required = false)   Long dealerIdHeader
     ) {
-        if ("TECHNICIAN".equals(userRole)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        if (RoleTiers.isStaff(userRole)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         Long dealerFilter = "ADMIN".equals(userRole) ? null : userId;
         return ResponseEntity.ok(jobCardService.deleteLabour(id, labourId, dealerFilter));
     }
 
     // ── Parts CRUD ────────────────────────────────────────────────────────────
 
-    @PostMapping("/{id}/parts")
+    @PostMapping("/{id}/labour/{labourId}/parts")
     public ResponseEntity<JobCardDetailResponse> addPart(
             @PathVariable Long id,
+            @PathVariable Long labourId,
             @RequestBody PartItemRequest req,
             @RequestHeader(value = "X-User-Id",   defaultValue = "0") Long userId,
             @RequestHeader(value = "X-User-Role", defaultValue = "")  String userRole,
             @RequestHeader(value = "X-Dealer-Id", required = false)   Long dealerIdHeader
     ) {
         Long dealerFilter = "ADMIN".equals(userRole) ? null
-                : "TECHNICIAN".equals(userRole) && dealerIdHeader != null ? dealerIdHeader
+                : RoleTiers.isStaff(userRole) && dealerIdHeader != null ? dealerIdHeader
                 : userId;
-        return ResponseEntity.ok(jobCardService.addPart(id, req, dealerFilter));
+        return ResponseEntity.ok(jobCardService.addPart(id, labourId, req, dealerFilter));
     }
 
     @DeleteMapping("/{id}/parts/{partId}")
@@ -177,7 +185,7 @@ public class JobCardController {
             @RequestHeader(value = "X-User-Role", defaultValue = "")  String userRole,
             @RequestHeader(value = "X-Dealer-Id", required = false)   Long dealerIdHeader
     ) {
-        if ("TECHNICIAN".equals(userRole)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        if (RoleTiers.isStaff(userRole)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         Long dealerFilter = "ADMIN".equals(userRole) ? null : userId;
         return ResponseEntity.ok(jobCardService.deletePart(id, partId, dealerFilter));
     }
@@ -193,7 +201,7 @@ public class JobCardController {
             @RequestHeader(value = "X-Dealer-Id", required = false)   Long dealerIdHeader
     ) {
         Long dealerFilter = "ADMIN".equals(userRole) ? null
-                : "TECHNICIAN".equals(userRole) && dealerIdHeader != null ? dealerIdHeader
+                : RoleTiers.isStaff(userRole) && dealerIdHeader != null ? dealerIdHeader
                 : userId;
         return ResponseEntity.ok(jobCardService.addAncillary(id, req, dealerFilter));
     }
@@ -205,7 +213,7 @@ public class JobCardController {
             @RequestHeader(value = "X-User-Role", defaultValue = "")  String userRole,
             @RequestHeader(value = "X-Dealer-Id", required = false)   Long dealerIdHeader
     ) {
-        if ("TECHNICIAN".equals(userRole)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        if (RoleTiers.isStaff(userRole)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         Long dealerFilter = "ADMIN".equals(userRole) ? null : userId;
         return ResponseEntity.ok(jobCardService.deleteAncillary(id, ancId, dealerFilter));
     }

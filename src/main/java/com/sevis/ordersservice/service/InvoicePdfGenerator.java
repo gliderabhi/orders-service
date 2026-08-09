@@ -41,9 +41,9 @@ public class InvoicePdfGenerator {
         "Chg", "Amt",  "Disc%",   "%",     "Liab","Amt",  "T%",  "Amt", "T%",  "Amt",  "(Incl.Tax)"
     };
 
-    private static final float ROW_H  = 14f;   // taller rows → no vertical crowding
-    private static final float THDR_H = 28f;   // taller header → two lines fit with padding
-    private static final float PAD    = 3f;    // horizontal cell padding
+    private static final float ROW_H  = 15f;   // taller rows → no vertical crowding
+    private static final float THDR_H = 30f;   // taller header → two lines fit with padding
+    private static final float PAD    = 4f;    // horizontal cell padding
 
     private static final Color DARK   = new Color(20,  20,  20);
     private static final Color MUTED  = new Color(80,  80,  80);
@@ -90,7 +90,7 @@ public class InvoicePdfGenerator {
             fill(cs, M, y - 12, CW, 12, new Color(235, 235, 235));
             text(cs, reg, 6.5f, "Issued under GST Invoice Rules", M + 4, y - 9, MUTED);
             textRight(cs, reg, 6.5f, "Original :For Recipient    Duplicate :For Supplier", M + CW - 4, y - 9, MUTED);
-            y -= 14;
+            y -= 20;
 
             // ── Info panel ────────────────────────────────────────────────────
             // Left 42%: customer details
@@ -99,26 +99,26 @@ public class InvoicePdfGenerator {
             float leftW    = CW * 0.42f;
             float rightX   = M + leftW + 4;
 
-            // Vertical divider spanning full info panel (19 rows × 9px each ≈ 180px)
-            vline(cs, M + leftW + 2, infoTopY, 185, 0.4f, LGRAY);
+            // Vertical divider spanning full info panel (19 rows × 10px each ≈ 190px)
+            vline(cs, M + leftW + 2, infoTopY, 200, 0.4f, LGRAY);
 
             // LEFT: Customer details
             float ly = infoTopY;
             if (cust != null && notBlank(cust.getName())) {
-                text(cs, bold, 8, cust.getName(), M, ly, DARK);                            ly -= 11;
+                text(cs, bold, 8, cust.getName(), M, ly, DARK);                            ly -= 13;
             }
             if (cust != null && notBlank(cust.getAddress())) {
                 for (String line : wordWrap(cust.getAddress(), 46)) {
-                    text(cs, reg, 7, line, M, ly, DARK);                                   ly -= 9;
+                    text(cs, reg, 7, line, M, ly, DARK);                                   ly -= 10;
                 }
             }
             text(cs, reg, 7, "Phone No (Res,Off,Mob): , , "
-                + (cust != null ? coalesce(cust.getPhone(), "") : ""), M, ly, DARK);       ly -= 9;
-            text(cs, reg, 7, "Customer GSTIN : ", M, ly, DARK);                            ly -= 9;
-            text(cs, reg, 7, "A/C Code : ", M, ly, DARK);                                 ly -= 9;
+                + (cust != null ? coalesce(cust.getPhone(), "") : ""), M, ly, DARK);       ly -= 10;
+            text(cs, reg, 7, "Customer GSTIN : ", M, ly, DARK);                            ly -= 10;
+            text(cs, reg, 7, "A/C Code : ", M, ly, DARK);                                 ly -= 10;
             if (notBlank(inv.getPlaceOfSupply()))
                 text(cs, reg, 7, "Place of Supply: " + inv.getPlaceOfSupply(), M, ly, DARK);
-            ly -= 9;
+            ly -= 10;
 
             // RIGHT: Invoice + vehicle + dealer details (all fields from real invoice)
             float ry = infoTopY;
@@ -150,19 +150,19 @@ public class InvoicePdfGenerator {
             ry = infoKv(cs, reg, rightX, ry, "Dealer GSTIN : ",          coalesce(inv.getDealerGstin(), ""));
             ry = infoKv(cs, reg, rightX, ry, "Next Service Date * : ",   "");
 
-            y = Math.min(ly, ry) - 4;
+            y = Math.min(ly, ry) - 8;
             hline(cs, y, M, CW, 0.5f, LGRAY);
-            y -= 2;
+            y -= 10;
 
             // PAN row (customer PAN)
             text(cs, reg, 7, "PAN : ", M, y, DARK);
-            y -= 4;
+            y -= 9;
             hline(cs, y, M, CW, 0.5f, LGRAY);
-            y -= 2;
+            y -= 8;
 
             // ── Line items table ──────────────────────────────────────────────
             y = drawTable(cs, inv.getLineItems(), bold, reg, y);
-            y -= 4;
+            y -= 12;
 
             // ── Totals ────────────────────────────────────────────────────────
             float tx = M + CW * 0.60f;
@@ -181,35 +181,36 @@ public class InvoicePdfGenerator {
             double finalParts = partsNet + totalTax;
 
             // Sub Total + Total Tax on right
-            totalRow(cs, reg,  tx, tw, y, "Sub Total:",         fmt(subTotal));  y -= 12;
-            totalRow(cs, reg,  tx, tw, y, "Total Tax Amount :", fmt(totalTax));  y -= 14;
+            totalRow(cs, reg,  tx, tw, y, "Sub Total:",         fmt(subTotal));  y -= 13;
+            totalRow(cs, reg,  tx, tw, y, "Total Tax Amount :", fmt(totalTax));  y -= 15;
 
             // Parts Net Taxable (left) | Final Labour Invoice Amount (right)
             text(cs, reg, 7.5f, "Parts Net Taxable Amount : " + fmt(partsNet), M, y, DARK);
             totalRow(cs, reg, tx, tw, y, "Final Labour Invoice Amount :", fmt(labourAmt));
-            y -= 2;
+            y -= 5;
             hline(cs, y, tx, tw, 0.4f, LGRAY);
-            y -= 12;
+            y -= 13;
 
             // Final Parts Invoice Amount (right only)
-            totalRow(cs, reg,  tx, tw, y, "Final Parts Invoice Amount :", fmt(finalParts)); y -= 12;
-            totalRow(cs, reg,  tx, tw, y, "Gross Amount :",               fmt(gross));       y -= 12;
+            totalRow(cs, reg,  tx, tw, y, "Final Parts Invoice Amount :", fmt(finalParts)); y -= 13;
+            totalRow(cs, reg,  tx, tw, y, "Gross Amount :",               fmt(gross));       y -= 13;
             if (adj != 0)
-                { totalRow(cs, reg, tx, tw, y, "Adjustments :", fmt(adj)); y -= 12; }
+                { totalRow(cs, reg, tx, tw, y, "Adjustments :", fmt(adj)); y -= 13; }
 
+            y -= 3;
             hline(cs, y, tx, tw, 0.6f, DARK);
-            y -= 4;
+            y -= 10;
 
             // Amount in words (left) | Grand Total (right, bold)
             text(cs, bold, 7, toWords(grandTotal), M, y, DARK);
             totalRow(cs, bold, tx, tw, y, "Grand Total :", "Rs. " + fmt(grandTotal));
-            y -= 16;
+            y -= 18;
 
             // ── Loyalty Info ──────────────────────────────────────────────────
             hline(cs, y, M, CW, 0.4f, LGRAY);
-            y -= 10;
-            text(cs, bold, 7, "Loyalty Info :", M, y, DARK);
             y -= 12;
+            text(cs, bold, 7, "Loyalty Info :", M, y, DARK);
+            y -= 13;
             float lw3 = CW / 3f;
             String memberNo = (cust != null && cust.getLoyaltyMemberNumber() != null)
                 ? cust.getLoyaltyMemberNumber() : "Not enrolled";
@@ -224,15 +225,15 @@ public class InvoicePdfGenerator {
 
             // ── Note ──────────────────────────────────────────────────────────
             hline(cs, y, M, CW, 0.3f, LGRAY);
-            y -= 9;
-            text(cs, bold, 7, "Note:", M, y, DARK);
-            y -= 9;
-            text(cs, reg, 6.5f, " 1) Insurance Liability % will only come for Insurance Job cards.", M, y, MUTED);
             y -= 11;
+            text(cs, bold, 7, "Note:", M, y, DARK);
+            y -= 10;
+            text(cs, reg, 6.5f, " 1) Insurance Liability % will only come for Insurance Job cards.", M, y, MUTED);
+            y -= 12;
 
             // ── Loyalty promo message ─────────────────────────────────────────
             hline(cs, y, M, CW, 0.3f, LGRAY);
-            y -= 8;
+            y -= 10;
             int earnedPts = (int) (grandTotal / 10);
             String promoMember = memberNo.equals("Not enrolled") ? "Dear Customer" : "Dear Loyalty Member";
             String promo = promoMember + ", you have earned " + earnedPts + " points on this transaction"
@@ -403,7 +404,7 @@ public class InvoicePdfGenerator {
     private static float infoKv(PDPageContentStream cs, PDType1Font reg,
             float x, float y, String key, String val) throws IOException {
         text(cs, reg, 7, key + val, x, y, DARK);
-        return y - 9;
+        return y - 10;
     }
 
     // ── Table ─────────────────────────────────────────────────────────────────

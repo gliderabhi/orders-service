@@ -5,6 +5,7 @@ import com.sevis.ordersservice.model.Technician;
 import com.sevis.ordersservice.repository.DealerTechnicianAssignmentRepository;
 import com.sevis.ordersservice.repository.TechnicianRepository;
 import lombok.RequiredArgsConstructor;
+import com.sevis.common.role.RoleTiers;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.HttpStatus;
@@ -33,7 +34,7 @@ public class TechnicianController {
 
     record TechnicianResponse(
             Long id, Long userId, String name, String phone, String employeeCode,
-            String panNumber, String aadhaarNumber,
+            String panNumber, String aadhaarNumber, double baseRate,
             String specialisation, boolean active, Long dealerId,
             String joinedDate, String leftDate
     ) {}
@@ -42,14 +43,14 @@ public class TechnicianController {
             String name, String phone, String employeeCode,
             String specialisation, Long dealerId,
             String panNumber, String aadhaarNumber,
-            Long userId
+            Long userId, Double baseRate
     ) {}
 
     private TechnicianResponse toResponse(DealerTechnicianAssignment a) {
         Technician t = a.getTechnician();
         return new TechnicianResponse(
                 t.getId(), t.getUserId(), t.getName(), t.getPhone(), t.getEmployeeCode(),
-                t.getPanNumber(), t.getAadhaarNumber(),
+                t.getPanNumber(), t.getAadhaarNumber(), t.getBaseRate(),
                 a.getSpecialisation(), a.isActive(), a.getDealerId(),
                 a.getJoinedDate() != null ? a.getJoinedDate().toString() : null,
                 a.getLeftDate() != null ? a.getLeftDate().toString() : null
@@ -91,7 +92,7 @@ public class TechnicianController {
             @RequestBody TechnicianRequest req,
             @RequestHeader(value = "X-User-Role", defaultValue = "") String userRole,
             @RequestHeader(value = "X-User-Id", defaultValue = "0") Long callerId) {
-        if ("TECHNICIAN".equals(userRole)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        if (RoleTiers.isStaff(userRole)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         Technician t = resolveOrCreate(req);
 
         assignmentRepository.findActiveByTechnicianId(t.getId()).ifPresent(existing -> {
@@ -139,6 +140,7 @@ public class TechnicianController {
         t.setName(name);
         t.setPhone(req.phone());
         t.setEmployeeCode(req.employeeCode());
+        if (req.baseRate() != null) t.setBaseRate(req.baseRate());
         if (pan  != null) t.setPanNumber(pan);
         if (aadh != null) t.setAadhaarNumber(aadh);
         if (req.userId() != null) t.setUserId(req.userId());
@@ -148,6 +150,7 @@ public class TechnicianController {
     private Technician syncContactDetails(Technician t, TechnicianRequest req) {
         t.setPhone(req.phone());
         t.setEmployeeCode(req.employeeCode());
+        if (req.baseRate() != null) t.setBaseRate(req.baseRate());
         if (hasPan(req)  && t.getPanNumber()     == null) t.setPanNumber(req.panNumber().toUpperCase().trim());
         if (hasAadh(req) && t.getAadhaarNumber() == null) t.setAadhaarNumber(req.aadhaarNumber().trim());
         if (req.userId() != null) t.setUserId(req.userId());
@@ -163,12 +166,13 @@ public class TechnicianController {
             @PathVariable Long id,
             @RequestBody TechnicianRequest req,
             @RequestHeader(value = "X-User-Role", defaultValue = "") String userRole) {
-        if ("TECHNICIAN".equals(userRole)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        if (RoleTiers.isStaff(userRole)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         Technician t = technicianRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Technician not found"));
         t.setName(req.name());
         t.setPhone(req.phone());
         t.setEmployeeCode(req.employeeCode());
+        if (req.baseRate() != null) t.setBaseRate(req.baseRate());
         if (hasPan(req))  t.setPanNumber(req.panNumber().toUpperCase().trim());
         if (hasAadh(req)) t.setAadhaarNumber(req.aadhaarNumber().trim());
         if (req.userId() != null) t.setUserId(req.userId());
@@ -188,7 +192,7 @@ public class TechnicianController {
     public ResponseEntity<Void> deactivate(
             @PathVariable Long id,
             @RequestHeader(value = "X-User-Role", defaultValue = "") String userRole) {
-        if ("TECHNICIAN".equals(userRole)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        if (RoleTiers.isStaff(userRole)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         DealerTechnicianAssignment a = assignmentRepository.findActiveByTechnicianId(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No active assignment found"));
         a.setActive(false);
@@ -197,13 +201,27 @@ public class TechnicianController {
         return ResponseEntity.noContent().build();
     }
 
+    // Used by attendance-service to resolve which dealer/manager a technician's
+    // leave requests should route to, without duplicating the assignment table.
+    @GetMapping("/dealer-for-user/{userId}")
+    public ResponseEntity<Map<String, Object>> dealerForUser(@PathVariable Long userId) {
+        Technician t = technicianRepository.findByUserId(userId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No technician linked to this user"));
+        DealerTechnicianAssignment a = assignmentRepository.findActiveByTechnicianId(t.getId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No active assignment found"));
+        Map<String, Object> body = new java.util.HashMap<>();
+        body.put("technicianId", t.getId());
+        body.put("dealerId", a.getDealerId());
+        return ResponseEntity.ok(body);
+    }
+
     @CacheEvict(value = "technicianList", allEntries = true)
     @PostMapping("/{id}/reassign")
     public ResponseEntity<TechnicianResponse> reassign(
             @PathVariable Long id,
             @RequestBody Map<String, Object> req,
             @RequestHeader(value = "X-User-Role", defaultValue = "") String userRole) {
-        if ("TECHNICIAN".equals(userRole)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        if (RoleTiers.isStaff(userRole)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         Technician t = technicianRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Technician not found"));
 

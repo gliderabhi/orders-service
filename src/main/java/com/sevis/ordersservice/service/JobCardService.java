@@ -13,6 +13,8 @@ import com.sevis.ordersservice.repository.TechnicianRepository;
 import com.sevis.ordersservice.repository.VehicleRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.cache.annotation.Caching;
@@ -22,8 +24,10 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.server.ResponseStatusException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -48,14 +52,31 @@ public class JobCardService {
     private final TechnicianRepository technicianRepository;
     private final InvoiceService       invoiceService;
     private final RestTemplate         restTemplate;
+    private final CacheManager         cacheManager;
 
-    private static final String STOCK_DEDUCT_URL  = "http://inventory-service/api/stock/deduct";
-    private static final String STOCK_RESTORE_URL = "http://inventory-service/api/stock/restore";
+    // vehicleHistory (VehicleController) embeds each job card's status/amount but no
+    // write path here evicts it directly — see JobCardService.java history; without
+    // this it silently relies on its own 20s TTL, which is fine for most edits but
+    // means a technician staring at a vehicle's history right as its status flips can
+    // see a stale entry for up to 20s. Status/payment changes are exactly the writes
+    // a dealer expects to see reflected immediately, so evict explicitly for those.
+    private void evictVehicleHistory(JobCard jc) {
+        if (jc.getVehicle() == null) return;
+        Cache cache = cacheManager.getCache("vehicleHistory");
+        if (cache != null) cache.evict(jc.getVehicle().getId());
+    }
+
+    // Inventory (dealer-managed quantities) is the single source of truth for job-card
+    // parts — there is no separate "stock" system in this flow.
+    private static final String INVENTORY_DEDUCT_URL  = "http://inventory-service/api/inventory/deduct";
+    private static final String INVENTORY_RESTORE_URL = "http://inventory-service/api/inventory/restore";
 
     private static final List<String> VALID_SERVICE_TYPES =
             List.of("PERIODIC_SERVICE", "RUNNING_REPAIR", "BODYWORK", "INSPECTION", "ACCIDENTAL", "WARRANTY");
+    // Order matters: this is also the job card's lifecycle sequence. Status can only
+    // move forward one stage at a time (no skipping ahead); moving backward is unrestricted.
     private static final List<String> VALID_STATUSES =
-            List.of("OPEN", "IN_PROGRESS", "READY", "DELIVERED", "CLOSED");
+            List.of("OPEN", "IN_PROGRESS", "QUALITY_CHECK", "READY", "DELIVERED", "CLOSED");
 
     // ── List ──────────────────────────────────────────────────────────────────
 
@@ -92,11 +113,16 @@ public class JobCardService {
 
     // ── Detail ────────────────────────────────────────────────────────────────
 
-    @Cacheable(value = "jobCardById", key = "#id", sync = true)
+    // Cache key includes both dealer and technician scoping so a technician-filtered
+    // response never gets served back to the dealer (or another technician) for the same id.
+    @Cacheable(value = "jobCardById", key = "#id + '-' + #dealerId + '-' + #technicianUserId", sync = true)
     @Transactional(readOnly = true)
-    public JobCardDetailResponse getById(Long id) {
+    public JobCardDetailResponse getById(Long id, Long dealerId, Long technicianUserId) {
         JobCard jc = jobCardRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Job card not found"));
+        if (dealerId != null && !jc.getDealerId().equals(dealerId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied");
+        }
         // Force-init each lazy collection separately — avoids MultipleBagFetchException
         jc.getCustomer().getName();
         jc.getVehicle().getRegNumber();
@@ -106,7 +132,14 @@ public class JobCardService {
         jc.getChecks();
         jc.getBilling();
         jc.getInvoices().size();
-        return new JobCardDetailResponse(jc);
+        if (technicianUserId != null) {
+            boolean assigned = jc.getLabourItems().stream()
+                    .anyMatch(l -> l.getTechnician() != null && technicianUserId.equals(l.getTechnician().getUserId()));
+            if (!assigned) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied");
+            }
+        }
+        return new JobCardDetailResponse(jc, technicianUserId);
     }
 
     // ── Create ────────────────────────────────────────────────────────────────
@@ -275,7 +308,7 @@ public class JobCardService {
     // ── Status update ─────────────────────────────────────────────────────────
 
     @Caching(evict = {
-            @CacheEvict(value = "jobCardById", key = "#id"),
+            @CacheEvict(value = "jobCardById", allEntries = true),
             @CacheEvict(value = "jobCardList", allEntries = true)
     })
     @Transactional
@@ -290,37 +323,61 @@ public class JobCardService {
         if (dealerId != null && !jc.getDealerId().equals(dealerId)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied");
         }
-        if ("CLOSED".equals(newStatus)) {
+
+        int currentIdx = VALID_STATUSES.indexOf(jc.getStatus());
+        int newIdx     = VALID_STATUSES.indexOf(newStatus);
+
+        // Forward moves must advance exactly one stage at a time; backward moves are unrestricted.
+        if (newIdx > currentIdx + 1) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Cannot skip stages: job card is at " + jc.getStatus() + ", next stage is "
+                            + VALID_STATUSES.get(currentIdx + 1));
+        }
+
+        if (newIdx > currentIdx) {
             jc.getLabourItems().size(); // init lazy collection
             boolean hasPending = jc.getLabourItems().stream()
                     .anyMatch(l -> l.getTechnician() != null && "PENDING".equals(l.getTaskStatus()));
             if (hasPending) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                        "Cannot close job card: some technician tasks are still pending");
+                        "Cannot advance to " + newStatus + ": some technician tasks are still pending");
             }
         }
+
+        // Vehicle can't leave (DELIVERED) or the job card be archived (CLOSED) until the
+        // customer has actually paid — this only applies to forward moves, so reopening a
+        // delivered/closed card backward is still unrestricted.
+        if (newIdx > currentIdx && ("DELIVERED".equals(newStatus) || "CLOSED".equals(newStatus))) {
+            JobCardBilling billing = jc.getBilling();
+            if (billing == null || !"PAID".equalsIgnoreCase(billing.getPaymentStatus())) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Cannot mark as " + newStatus + ": payment has not been recorded as PAID yet");
+            }
+        }
+
         if ("DELIVERED".equals(newStatus) || "CLOSED".equals(newStatus)) {
             jc.setDateOut(LocalDate.now());
         }
         jc.setStatus(newStatus);
-        return new JobCardDetailResponse(jobCardRepository.save(jc));
+        JobCard saved = jobCardRepository.save(jc);
+        evictVehicleHistory(saved);
+        return new JobCardDetailResponse(saved);
     }
 
     // ── Update payment ────────────────────────────────────────────────────────
 
     @Caching(evict = {
-            @CacheEvict(value = "jobCardById", key = "#id"),
+            @CacheEvict(value = "jobCardById", allEntries = true),
             @CacheEvict(value = "jobCardList", allEntries = true)
     })
     @Transactional
     public JobCardDetailResponse updatePayment(Long id, String paymentType, String paymentStatus, Long dealerId) {
         JobCard jc = jobCardRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Job card not found"));
-        if (!"CLOSED".equals(jc.getStatus())) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "Payment can only be recorded for CLOSED job cards");
-        }
 
+        // Payment must be recorded before the job card can move to DELIVERED/CLOSED (enforced
+        // in updateStatus), so it needs to be settable any time before that — not gated to
+        // CLOSED only, the way it used to be.
         JobCardBilling billing = jc.getBilling();
         if (billing == null) {
             billing = new JobCardBilling();
@@ -330,6 +387,7 @@ public class JobCardService {
         billing.setPaymentType(paymentType.toUpperCase());
         billing.setPaymentStatus(paymentStatus.toUpperCase());
         jobCardRepository.save(jc);
+        evictVehicleHistory(jc);
 
         // Auto-generate invoice when marked as PAID
         if ("PAID".equalsIgnoreCase(paymentStatus)) {
@@ -374,7 +432,7 @@ public class JobCardService {
     // ── Add / delete labour items ─────────────────────────────────────────────
 
     @Caching(evict = {
-            @CacheEvict(value = "jobCardById", key = "#id"),
+            @CacheEvict(value = "jobCardById", allEntries = true),
             @CacheEvict(value = "jobCardList", allEntries = true)
     })
     @Transactional
@@ -391,6 +449,15 @@ public class JobCardService {
         l.setRate(req.getRate());
         l.setAmount(req.getQuantity() * req.getRate());
         jc.getLabourItems().add(l);
+        if (req.getParts() != null) {
+            for (PartItemRequest partReq : req.getParts()) {
+                jc.getParts().add(buildPart(jc, l, partReq));
+            }
+        }
+        // Work has now actually started on the vehicle — OPEN no longer reflects reality.
+        if ("OPEN".equals(jc.getStatus())) {
+            jc.setStatus("IN_PROGRESS");
+        }
         recalcBilling(jc);
         JobCardDetailResponse saved = new JobCardDetailResponse(jobCardRepository.save(jc));
         invoiceService.updateInvoiceIfExists(id, jc.getDealerId());
@@ -398,15 +465,22 @@ public class JobCardService {
     }
 
     @Caching(evict = {
-            @CacheEvict(value = "jobCardById", key = "#id"),
+            @CacheEvict(value = "jobCardById", allEntries = true),
             @CacheEvict(value = "jobCardList", allEntries = true)
     })
     @Transactional
     public JobCardDetailResponse deleteLabour(Long id, Long labourId, Long dealerId) {
         JobCard jc = getForUpdate(id, dealerId);
+        // Parts only exist attached to a labour item — removing the labour item must also
+        // remove (and restock) whatever parts were attached to it.
+        List<JobCardPart> attachedParts = jc.getParts().stream()
+                .filter(p -> p.getLabour() != null && p.getLabour().getId().equals(labourId))
+                .collect(Collectors.toList());
+        jc.getParts().removeAll(attachedParts);
         jc.getLabourItems().removeIf(l -> l.getId().equals(labourId));
         recalcBilling(jc);
         JobCardDetailResponse saved = new JobCardDetailResponse(jobCardRepository.save(jc));
+        attachedParts.forEach(p -> restoreStock(jc.getDealerId(), p.getPartNumber(), p.getQuantity()));
         invoiceService.updateInvoiceIfExists(id, jc.getDealerId());
         return saved;
     }
@@ -414,7 +488,7 @@ public class JobCardService {
     // ── Update task status (technician marks their work done/pending) ──────────
 
     @Caching(evict = {
-            @CacheEvict(value = "jobCardById", key = "#id"),
+            @CacheEvict(value = "jobCardById", allEntries = true),
             @CacheEvict(value = "jobCardList", allEntries = true)
     })
     @Transactional
@@ -451,30 +525,42 @@ public class JobCardService {
     // ── Add / delete parts ────────────────────────────────────────────────────
 
     @Caching(evict = {
-            @CacheEvict(value = "jobCardById", key = "#id"),
+            @CacheEvict(value = "jobCardById", allEntries = true),
             @CacheEvict(value = "jobCardList", allEntries = true)
     })
     @Transactional
-    public JobCardDetailResponse addPart(Long id, PartItemRequest req, Long dealerId) {
+    public JobCardDetailResponse addPart(Long id, Long labourId, PartItemRequest req, Long dealerId) {
         JobCard jc = getForUpdate(id, dealerId);
+        JobCardLabour labour = jc.getLabourItems().stream()
+                .filter(l -> l.getId().equals(labourId)).findFirst()
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Labour item not found"));
+        // Deduct first and let it throw on insufficient stock — this is the
+        // authoritative check (atomic in inventory-service), not just a UI pre-check.
+        jc.getParts().add(buildPart(jc, labour, req));
+        recalcBilling(jc);
+        JobCardDetailResponse saved = new JobCardDetailResponse(jobCardRepository.save(jc));
+        invoiceService.updateInvoiceIfExists(id, jc.getDealerId());
+        return saved;
+    }
+
+    // Parts always belong to a labour item (e.g. engine oil under "Oil change") — there is
+    // no standalone part-adding path.
+    private JobCardPart buildPart(JobCard jc, JobCardLabour labour, PartItemRequest req) {
+        deductStock(jc.getDealerId(), req.getPartNumber(), req.getQuantity());
         JobCardPart p = new JobCardPart();
         p.setJobCard(jc);
+        p.setLabour(labour);
         p.setPartNumber(req.getPartNumber());
         p.setDescription(req.getDescription());
         p.setPartType(req.getPartType() != null ? req.getPartType().toUpperCase() : "OEM");
         p.setQuantity(req.getQuantity());
         p.setUnitPrice(req.getUnitPrice());
         p.setTotalPrice(req.getQuantity() * req.getUnitPrice());
-        jc.getParts().add(p);
-        recalcBilling(jc);
-        JobCardDetailResponse saved = new JobCardDetailResponse(jobCardRepository.save(jc));
-        deductStock(jc.getDealerId(), req.getPartNumber(), req.getQuantity());
-        invoiceService.updateInvoiceIfExists(id, jc.getDealerId());
-        return saved;
+        return p;
     }
 
     @Caching(evict = {
-            @CacheEvict(value = "jobCardById", key = "#id"),
+            @CacheEvict(value = "jobCardById", allEntries = true),
             @CacheEvict(value = "jobCardList", allEntries = true)
     })
     @Transactional
@@ -492,7 +578,7 @@ public class JobCardService {
     // ── Add / delete ancillary items ──────────────────────────────────────────
 
     @Caching(evict = {
-            @CacheEvict(value = "jobCardById", key = "#id"),
+            @CacheEvict(value = "jobCardById", allEntries = true),
             @CacheEvict(value = "jobCardList", allEntries = true)
     })
     @Transactional
@@ -510,7 +596,7 @@ public class JobCardService {
     }
 
     @Caching(evict = {
-            @CacheEvict(value = "jobCardById", key = "#id"),
+            @CacheEvict(value = "jobCardById", allEntries = true),
             @CacheEvict(value = "jobCardList", allEntries = true)
     })
     @Transactional
@@ -566,28 +652,53 @@ public class JobCardService {
         b.setBalanceDue(grandTotal - b.getAdvanceAmount());
     }
 
-    // ── Stock helpers ─────────────────────────────────────────────────────────
+    // ── Inventory helpers ─────────────────────────────────────────────────────
 
+    // Deducting is the authoritative "is there enough stock" check, so failures propagate
+    // and abort the part addition (see addPart).
     private void deductStock(Long dealerId, String partNumber, int quantity) {
         if (partNumber == null || partNumber.isBlank() || quantity <= 0) return;
-        callStock(STOCK_DEDUCT_URL, dealerId, partNumber, quantity);
+        callInventory(INVENTORY_DEDUCT_URL, dealerId, partNumber, quantity, true);
     }
 
+    // Restoring on removal is best-effort cleanup — a removal shouldn't fail because the
+    // inventory call had trouble.
     private void restoreStock(Long dealerId, String partNumber, int quantity) {
         if (partNumber == null || partNumber.isBlank() || quantity <= 0) return;
-        callStock(STOCK_RESTORE_URL, dealerId, partNumber, quantity);
+        callInventory(INVENTORY_RESTORE_URL, dealerId, partNumber, quantity, false);
     }
 
-    private void callStock(String url, Long dealerId, String partNumber, int quantity) {
+    private void callInventory(String url, Long dealerId, String sku, int quantity, boolean propagateFailure) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.set("X-User-Id", String.valueOf(dealerId));
+        Map<String, Object> body = Map.of("sku", sku, "quantity", quantity);
         try {
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            headers.set("X-User-Id", String.valueOf(dealerId));
-            List<Map<String, Object>> body = List.of(Map.of("partNumber", partNumber, "quantity", quantity));
             restTemplate.postForEntity(url, new HttpEntity<>(body, headers), Void.class);
+        } catch (HttpClientErrorException e) {
+            if (!propagateFailure) {
+                log.warn("Inventory update failed for part {}: {}", sku, e.getMessage());
+                return;
+            }
+            throw new ResponseStatusException(e.getStatusCode(), extractInventoryError(e, sku));
         } catch (Exception e) {
-            log.warn("Stock update failed for part {}: {}", partNumber, e.getMessage());
+            if (!propagateFailure) {
+                log.warn("Inventory update failed for part {}: {}", sku, e.getMessage());
+                return;
+            }
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Inventory service unavailable");
         }
+    }
+
+    private String extractInventoryError(HttpClientErrorException e, String sku) {
+        try {
+            Map<?, ?> body = new ObjectMapper().readValue(e.getResponseBodyAsString(), Map.class);
+            Object msg = body.get("error");
+            if (msg != null) return msg.toString();
+        } catch (Exception ignored) {
+            // fall through to generic message below
+        }
+        return "Could not deduct stock for part: " + sku;
     }
 
     // ── Job card number generation ─────────────────────────────────────────────

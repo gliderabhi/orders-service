@@ -5,6 +5,7 @@ import com.sevis.ordersservice.model.TechnicianSalary;
 import com.sevis.ordersservice.repository.TechnicianRepository;
 import com.sevis.ordersservice.repository.TechnicianSalaryRepository;
 import lombok.RequiredArgsConstructor;
+import com.sevis.common.role.RoleTiers;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Caching;
 import org.springframework.cache.annotation.Cacheable;
@@ -78,7 +79,7 @@ public class TechnicianSalaryController {
     public ResponseEntity<SalaryResponse> upsert(
             @RequestBody SalaryRequest req,
             @RequestHeader(value = "X-User-Role", defaultValue = "") String userRole) {
-        if ("TECHNICIAN".equals(userRole)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        if (RoleTiers.isStaff(userRole)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         Technician t = technicianRepository.findById(req.technicianId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Technician not found"));
 
@@ -109,7 +110,7 @@ public class TechnicianSalaryController {
     public ResponseEntity<SalaryResponse> markPaid(
             @PathVariable Long id,
             @RequestHeader(value = "X-User-Role", defaultValue = "") String userRole) {
-        if ("TECHNICIAN".equals(userRole)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        if (RoleTiers.isStaff(userRole)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         TechnicianSalary s = salaryRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Salary record not found"));
         s.setStatus("PAID");
@@ -126,7 +127,7 @@ public class TechnicianSalaryController {
     public ResponseEntity<Void> delete(
             @PathVariable Long id,
             @RequestHeader(value = "X-User-Role", defaultValue = "") String userRole) {
-        if ("TECHNICIAN".equals(userRole)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        if (RoleTiers.isStaff(userRole)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         salaryRepository.deleteById(id);
         return ResponseEntity.noContent().build();
     }

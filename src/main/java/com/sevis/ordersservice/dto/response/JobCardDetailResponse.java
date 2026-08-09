@@ -11,6 +11,7 @@ import java.util.stream.Collectors;
 public class JobCardDetailResponse {
 
     private final Long id;
+    private final Long dealerId;
     private final String jobCardNumber;
     private final String serviceType;
     private final String status;
@@ -25,14 +26,21 @@ public class JobCardDetailResponse {
     private final CustomerInfo customer;
     private final VehicleInfo vehicle;
     private final List<LabourItemInfo> labourItems;
-    private final List<PartItemInfo> parts;
     private final List<AncillaryItemInfo> ancillaryItems;
     private final ChecksInfo checks;
     private final BillingInfo billing;
     private final InvoiceInfo invoice;
 
     public JobCardDetailResponse(JobCard jc) {
+        this(jc, null);
+    }
+
+    // technicianUserId != null scopes labourItems down to only that technician's own
+    // assignments — a technician has no business seeing who else worked the job or what
+    // they charged for it.
+    public JobCardDetailResponse(JobCard jc, Long technicianUserId) {
         this.id                 = jc.getId();
+        this.dealerId           = jc.getDealerId();
         this.jobCardNumber      = jc.getJobCardNumber();
         this.serviceType        = jc.getServiceType();
         this.status             = jc.getStatus();
@@ -47,8 +55,13 @@ public class JobCardDetailResponse {
         this.customer = new CustomerInfo(jc.getCustomer());
         this.vehicle  = new VehicleInfo(jc.getVehicle());
 
-        this.labourItems    = jc.getLabourItems().stream().map(LabourItemInfo::new).collect(Collectors.toList());
-        this.parts          = jc.getParts().stream().map(PartItemInfo::new).collect(Collectors.toList());
+        var labourStream = jc.getLabourItems().stream();
+        if (technicianUserId != null) {
+            labourStream = labourStream.filter(l ->
+                    l.getTechnician() != null && technicianUserId.equals(l.getTechnician().getUserId()));
+        }
+        List<JobCardPart> allParts = jc.getParts();
+        this.labourItems    = labourStream.map(l -> new LabourItemInfo(l, allParts)).collect(Collectors.toList());
         this.ancillaryItems = jc.getAncillaryItems().stream().map(AncillaryItemInfo::new).collect(Collectors.toList());
 
         this.checks  = jc.getChecks()  != null ? new ChecksInfo(jc.getChecks())   : null;
@@ -119,8 +132,9 @@ public class JobCardDetailResponse {
         private final int quantity;
         private final double rate;
         private final double amount;
+        private final List<PartItemInfo> parts;
 
-        public LabourItemInfo(JobCardLabour l) {
+        public LabourItemInfo(JobCardLabour l, List<JobCardPart> allParts) {
             this.id              = l.getId();
             this.description     = l.getDescription();
             this.type            = l.getType();
@@ -130,6 +144,10 @@ public class JobCardDetailResponse {
             this.quantity        = l.getQuantity();
             this.rate            = l.getRate();
             this.amount          = l.getAmount();
+            this.parts           = allParts.stream()
+                    .filter(p -> p.getLabour() != null && p.getLabour().getId().equals(l.getId()))
+                    .map(PartItemInfo::new)
+                    .collect(Collectors.toList());
         }
     }
 
