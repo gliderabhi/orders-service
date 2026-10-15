@@ -10,6 +10,4 @@ public interface TechnicianRepository extends JpaRepository<Technician, Long> {
     Optional<Technician> findByNameIgnoreCaseAndPanNumber(String name, String panNumber);
 
     Optional<Technician> findByNameIgnoreCaseAndAadhaarNumber(String name, String aadhaarNumber);
-
-    Optional<Technician> findByUserId(Long userId);
 }

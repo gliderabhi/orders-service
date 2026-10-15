@@ -27,10 +27,12 @@ public class JobCardLabour {
     @JoinColumn(name = "technician_id")
     private Technician technician;
 
-    // PENDING until the assigned technician marks it DONE
-    private String taskStatus = "PENDING";
-
-    private int quantity = 1;
+    private double quantity = 1.0;
     private double rate;
     private double amount;
+
+    private String jobCode;
+    private String hsnCode = "998714";
+    private Double cgstRate;
+    private Double sgstRate;
 }

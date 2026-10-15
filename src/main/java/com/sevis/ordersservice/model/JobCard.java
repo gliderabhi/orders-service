@@ -70,6 +70,16 @@ public class JobCard {
     // Original job card number from external DMS/PDF (e.g. JC-JhaDam-GP1-2526-000212)
     private String externalJobCardNumber;
 
+    private String dealerName;
+    private String dealerPan;
+    private String dealerGstin;
+    private String preparedBy;
+    private String placeOfSupply;
+    private String paymentMethod;
+    private Double adjustments;
+    private String warrantyExpired;
+    private String nextServiceDate;
+
     @OneToMany(mappedBy = "jobCard", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<Invoice> invoices = new ArrayList<>();
 

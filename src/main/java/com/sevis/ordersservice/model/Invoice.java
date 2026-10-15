@@ -47,6 +47,14 @@ public class Invoice {
     private Integer kms;
     private String placeOfSupply;
     private String preparedBy;
+    private String customerGstin;
+    private String customerPan;
+    private String accountCode;
+    private String insuranceCompany;
+    private String insuranceType;
+    private String insuranceExpiryDate;
+    private String nextServiceDate;
+    private String warrantyExpired;
 
     private Double partsNetTaxableAmount;
     private Double labourTaxableAmount;

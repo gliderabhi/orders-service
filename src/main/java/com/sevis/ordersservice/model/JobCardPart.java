@@ -18,13 +18,6 @@ public class JobCardPart {
     @JoinColumn(name = "job_card_id", nullable = false)
     private JobCard jobCard;
 
-    // Every part belongs to a labour job (e.g. engine oil under "Oil change") — parts are
-    // never added standalone. Nullable during the migration window only, so existing rows
-    // can be backfilled before this is tightened to NOT NULL.
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "labour_id")
-    private JobCardLabour labour;
-
     @Column(nullable = false)
     private String partNumber;
 
@@ -33,7 +26,12 @@ public class JobCardPart {
 
     private String partType = "OEM";  // OEM, AM, DEALER_SUPPLY
 
-    private int quantity = 1;
+    private double quantity = 1.0;
     private double unitPrice;
     private double totalPrice;
+
+    private String hsnCode;
+    private String uom = "Each";
+    private Double cgstRate;
+    private Double sgstRate;
 }

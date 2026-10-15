@@ -27,10 +27,12 @@ public class Customer {
     @Column(length = 500)
     private String address;
 
-    // ── Loyalty ───────────────────────────────────────────────────────────────
-    private String loyaltyMemberNumber;    // e.g. MBR-000042
-    private Integer loyaltyPoints = 0;     // cumulative point balance
-    private String loyaltyTier = "MEMBER"; // MEMBER / SILVER / GOLD / PLATINUM
+    private String customerGstin;
+    private String pan;
+    private String accountCode;
+    private String loyaltyMemberNumber;
+    private Integer loyaltyPoints;
+    private String loyaltyTier;
 
     private LocalDateTime createdAt;
 

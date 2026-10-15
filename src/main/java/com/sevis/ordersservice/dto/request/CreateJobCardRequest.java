@@ -26,6 +26,16 @@ public class CreateJobCardRequest {
     private String expectedDelivery;    // "YYYY-MM-DD"
     private String customerComplaint;
     private String advisorName;
+    private String externalJobCardNumber;
+    private String dealerName;
+    private String dealerPan;
+    private String dealerGstin;
+    private String preparedBy;
+    private String placeOfSupply;
+    private String paymentMethod;
+    private Double adjustments;
+    private String warrantyExpired;
+    private String nextServiceDate;
 
     @Valid
     private List<LabourItemData> labourItems = new ArrayList<>();
@@ -51,6 +61,12 @@ public class CreateJobCardRequest {
 
         private String email;
         private String address;
+        private String customerGstin;
+        private String pan;
+        private String accountCode;
+        private String loyaltyMemberNumber;
+        private Integer loyaltyPoints;
+        private String loyaltyTier;
     }
 
     @Data
@@ -78,12 +94,17 @@ public class CreateJobCardRequest {
         private String description;
 
         private String type = "LABOUR";
+        private String jobCode;
+        private String hsnCode = "998714";
 
-        @Min(value = 1, message = "Quantity must be at least 1")
-        private int quantity = 1;
+        @DecimalMin(value = "0.0001", message = "Quantity must be greater than 0")
+        private double quantity = 1.0;
 
         @Min(value = 0, message = "Rate cannot be negative")
         private double rate;
+
+        private Double cgstRate;
+        private Double sgstRate;
     }
 
     @Data
@@ -95,12 +116,17 @@ public class CreateJobCardRequest {
         private String description;
 
         private String partType = "OEM";
+        private String hsnCode;
+        private String uom = "Each";
 
-        @Min(value = 1, message = "Quantity must be at least 1")
-        private int quantity = 1;
+        @DecimalMin(value = "0.0001", message = "Quantity must be greater than 0")
+        private double quantity = 1.0;
 
         @Min(value = 0, message = "Unit price cannot be negative")
         private double unitPrice;
+
+        private Double cgstRate;
+        private Double sgstRate;
     }
 
     @Data
@@ -135,8 +161,9 @@ public class CreateJobCardRequest {
     @Data
     public static class BillingData {
         @Min(0) private double discount = 0;
-        @Min(0) @Max(100) private double cgstRate = 0;
-        @Min(0) @Max(100) private double sgstRate = 0;
+        // Standard intra-state GST slab (9%+9%=18%) on auto parts/labour; override via PATCH /billing for interstate (IGST) jobs.
+        @Min(0) @Max(100) private double cgstRate = 9;
+        @Min(0) @Max(100) private double sgstRate = 9;
         @Min(0) @Max(100) private double igstRate = 0;
         @Min(0) private double advanceAmount = 0;
         private String paymentType = "CASH";

@@ -59,4 +59,15 @@ public class InvoiceController {
                 ContentDisposition.attachment().filename("invoice-" + id + ".pdf").build());
         return ResponseEntity.ok().headers(headers).body(pdf);
     }
+
+    @GetMapping("/test-multi/pdf")
+    public ResponseEntity<byte[]> testMultiPdf() throws java.io.IOException {
+        com.sevis.ordersservice.model.Invoice inv = com.sevis.ordersservice.service.InvoicePdfGenerator.createSampleMultiInvoice();
+        byte[] pdf = com.sevis.ordersservice.service.InvoicePdfGenerator.generate(inv);
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_PDF);
+        headers.setContentDisposition(
+                ContentDisposition.inline().filename("consolidated-multi-sample.pdf").build());
+        return ResponseEntity.ok().headers(headers).body(pdf);
+    }
 }

@@ -27,11 +27,6 @@ public class InvoiceDetailResponse {
     private final String placeOfSupply;
     private final String preparedBy;
     private final Double partsNetTaxableAmount;
-    // Sum of every line item's taxable amount (labour + parts + ancillary) — the true
-    // pre-tax base for the whole invoice. partsNetTaxableAmount above is parts-only
-    // (kept for the PDF's "Parts Net Taxable Amount" line) and reads as ₹0 whenever a
-    // job card has no parts, which isn't the same thing as an untaxed invoice.
-    private final Double taxableAmount;
     private final Double totalTaxAmount;
     private final Double grandTotal;
     private final Double adjustments;
@@ -59,9 +54,6 @@ public class InvoiceDetailResponse {
         this.grandTotal              = inv.getGrandTotal();
         this.adjustments             = inv.getAdjustments();
         this.lineItems               = inv.getLineItems().stream().map(LineItemInfo::new).collect(Collectors.toList());
-        this.taxableAmount           = inv.getLineItems().stream()
-                .mapToDouble(li -> li.getTaxableAmount() != null ? li.getTaxableAmount() : 0.0)
-                .sum();
     }
 
     @Getter
