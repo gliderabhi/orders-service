@@ -28,6 +28,7 @@ public class JobCardController {
 
     private final JobCardService  jobCardService;
     private final InvoiceService  invoiceService;
+    private final com.sevis.ordersservice.service.IdempotencyStore idempotency;
 
     @GetMapping
     public List<JobCardSummaryResponse> getAll(
@@ -38,7 +39,7 @@ public class JobCardController {
             @RequestParam(required = false) String to
     ) {
         Long dealerFilter = "ADMIN".equals(userRole) ? null
-                : "TECHNICIAN".equals(userRole) && dealerIdHeader != null ? dealerIdHeader
+                : !"DEALER".equals(userRole) && dealerIdHeader != null ? dealerIdHeader
                 : userId;
         java.time.LocalDate fromDate = (from != null && !from.isBlank()) ? java.time.LocalDate.parse(from) : null;
         java.time.LocalDate toDate   = (to   != null && !to.isBlank())   ? java.time.LocalDate.parse(to)   : null;
@@ -51,16 +52,24 @@ public class JobCardController {
     }
 
     @PostMapping
-    public ResponseEntity<JobCardDetailResponse> create(
+    public ResponseEntity<String> create(
             @Valid @RequestBody CreateJobCardRequest request,
-            @RequestHeader(value = "X-User-Id",   defaultValue = "0") Long dealerId,
-            @RequestHeader(value = "X-User-Role", defaultValue = "")  String userRole
+            @RequestHeader(value = "X-User-Id",   defaultValue = "0") Long userId,
+            @RequestHeader(value = "X-User-Role", defaultValue = "")  String userRole,
+            @RequestHeader(value = "X-Dealer-Id", required = false)   Long dealerIdHeader,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idemKey
     ) {
         if ("TECHNICIAN".equals(userRole)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(jobCardService.create(request, dealerId));
+        Long dealerId = !"DEALER".equals(userRole) && !"ADMIN".equals(userRole) && dealerIdHeader != null ? dealerIdHeader : userId;
+        final Long tenantId = dealerId;
+        try {
+            return ResponseEntity.status(HttpStatus.CREATED).contentType(MediaType.APPLICATION_JSON)
+                    .body(idempotency.runJson(tenantId, "job-card-create", idemKey, () -> jobCardService.create(request, tenantId)));
+        } catch (com.sevis.ordersservice.service.IdempotencyStore.InFlight e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).build();
+        }
     }
 
     @PatchMapping("/{id}/status")
@@ -72,7 +81,7 @@ public class JobCardController {
             @RequestHeader(value = "X-Dealer-Id", required = false)      Long dealerIdHeader
     ) {
         Long dealerFilter = "ADMIN".equals(userRole) ? null
-                : "TECHNICIAN".equals(userRole) && dealerIdHeader != null ? dealerIdHeader
+                : !"DEALER".equals(userRole) && dealerIdHeader != null ? dealerIdHeader
                 : userId;
         return ResponseEntity.ok(jobCardService.updateStatus(id, status, dealerFilter));
     }
@@ -98,7 +107,7 @@ public class JobCardController {
             @RequestParam String paymentStatus,
             @RequestHeader(value = "X-User-Id", defaultValue = "0") Long userId
     ) {
-        return ResponseEntity.ok(jobCardService.updatePayment(id, paymentType, paymentStatus, userId));
+        return ResponseEntity.ok(jobCardService.updatePayment(id, paymentType, paymentStatus, tenant(userId)));
     }
 
     // ── Update tax/discount rates ──────────────────────────────────────────────
@@ -115,7 +124,7 @@ public class JobCardController {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
         Long dealerFilter = "ADMIN".equals(userRole) ? null
-                : "TECHNICIAN".equals(userRole) && dealerIdHeader != null ? dealerIdHeader
+                : !"DEALER".equals(userRole) && dealerIdHeader != null ? dealerIdHeader
                 : userId;
         return ResponseEntity.ok(jobCardService.updateBilling(id, req, dealerFilter));
     }
@@ -127,7 +136,7 @@ public class JobCardController {
             @PathVariable Long id,
             @RequestHeader(value = "X-User-Id", defaultValue = "0") Long dealerId
     ) {
-        return ResponseEntity.ok(invoiceService.generateOrUpdateInvoice(id, dealerId));
+        return ResponseEntity.ok(invoiceService.generateOrUpdateInvoice(id, tenant(dealerId)));
     }
 
     // ── Labour CRUD ───────────────────────────────────────────────────────────
@@ -141,7 +150,7 @@ public class JobCardController {
             @RequestHeader(value = "X-Dealer-Id", required = false)   Long dealerIdHeader
     ) {
         Long dealerFilter = "ADMIN".equals(userRole) ? null
-                : "TECHNICIAN".equals(userRole) && dealerIdHeader != null ? dealerIdHeader
+                : !"DEALER".equals(userRole) && dealerIdHeader != null ? dealerIdHeader
                 : userId;
         return ResponseEntity.ok(jobCardService.addLabour(id, req, dealerFilter));
     }
@@ -169,7 +178,7 @@ public class JobCardController {
             @RequestHeader(value = "X-Dealer-Id", required = false)   Long dealerIdHeader
     ) {
         Long dealerFilter = "ADMIN".equals(userRole) ? null
-                : "TECHNICIAN".equals(userRole) && dealerIdHeader != null ? dealerIdHeader
+                : !"DEALER".equals(userRole) && dealerIdHeader != null ? dealerIdHeader
                 : userId;
         return ResponseEntity.ok(jobCardService.addPart(id, req, dealerFilter));
     }
@@ -197,7 +206,7 @@ public class JobCardController {
             @RequestHeader(value = "X-Dealer-Id", required = false)   Long dealerIdHeader
     ) {
         Long dealerFilter = "ADMIN".equals(userRole) ? null
-                : "TECHNICIAN".equals(userRole) && dealerIdHeader != null ? dealerIdHeader
+                : !"DEALER".equals(userRole) && dealerIdHeader != null ? dealerIdHeader
                 : userId;
         return ResponseEntity.ok(jobCardService.addAncillary(id, req, dealerFilter));
     }
@@ -212,5 +221,14 @@ public class JobCardController {
         if ("TECHNICIAN".equals(userRole)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         Long dealerFilter = "ADMIN".equals(userRole) ? null : userId;
         return ResponseEntity.ok(jobCardService.deleteAncillary(id, ancId, dealerFilter));
+    }
+
+    private static Long tenant(Long userId) {
+        var attrs = org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
+        if (!(attrs instanceof org.springframework.web.context.request.ServletRequestAttributes sra)) return userId;
+        String role = sra.getRequest().getHeader("X-User-Role");
+        if ("DEALER".equals(role) || "ADMIN".equals(role)) return userId;
+        String h = sra.getRequest().getHeader("X-Dealer-Id");
+        try { return h == null || h.isBlank() ? userId : Long.valueOf(h.trim()); } catch (NumberFormatException e) { return userId; }
     }
 }

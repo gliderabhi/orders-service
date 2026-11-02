@@ -26,7 +26,7 @@ public class InvoiceController {
             @RequestHeader(value = "X-User-Role", defaultValue = "") String userRole,
             @RequestParam(required = false) String from,
             @RequestParam(required = false) String to) {
-        Long dealerId = "ADMIN".equals(userRole) ? null : userId;
+        Long dealerId = "ADMIN".equals(userRole) ? null : tenant(userId);
         LocalDate fromDate = from != null ? LocalDate.parse(from) : null;
         LocalDate toDate   = to   != null ? LocalDate.parse(to)   : null;
         return invoiceService.getAll(dealerId, fromDate, toDate);
@@ -37,7 +37,7 @@ public class InvoiceController {
             @RequestBody byte[] pdfBytes,
             @RequestHeader(value = "X-User-Id", defaultValue = "0") Long dealerId) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(invoiceService.uploadPdf(pdfBytes, dealerId));
+                .body(invoiceService.uploadPdf(pdfBytes, tenant(dealerId)));
     }
 
     @GetMapping("/job-card/{jobCardId}")
@@ -69,5 +69,14 @@ public class InvoiceController {
         headers.setContentDisposition(
                 ContentDisposition.inline().filename("consolidated-multi-sample.pdf").build());
         return ResponseEntity.ok().headers(headers).body(pdf);
+    }
+
+    private static Long tenant(Long userId) {
+        var attrs = org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
+        if (!(attrs instanceof org.springframework.web.context.request.ServletRequestAttributes sra)) return userId;
+        String role = sra.getRequest().getHeader("X-User-Role");
+        if ("DEALER".equals(role) || "ADMIN".equals(role)) return userId;
+        String h = sra.getRequest().getHeader("X-Dealer-Id");
+        try { return h == null || h.isBlank() ? userId : Long.valueOf(h.trim()); } catch (NumberFormatException e) { return userId; }
     }
 }
